@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="GMap.NET.WinForms" Version="2.1.7" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="Presentation\CoreForms\MainForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="Presentation\TripForms\FareFuleForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="Presentation\TripForms\DriverTripForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="Presentation\TripForms\TripHistoryForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="Presentation\TripForms\RequestTripForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+  </ItemGroup>
+
+</Project>
