@@ -512,7 +512,7 @@ namespace OOP.Presentation
         private static readonly Color Blue = Color.FromArgb(0, 122, 255);
         private static readonly Color Green = Color.FromArgb(0, 150, 80);
 
-        public EditFareRuleForm(FareRule rule)
+        public EditFareRuleForm(Fare rule)
         {
             Text = $"Chỉnh sửa bảng giá – {rule.VehicleType}";
             Size = new Size(440, 440);
@@ -527,7 +527,7 @@ namespace OOP.Presentation
             BuildUI(rule);
         }
 
-        private void BuildUI(FareRule rule)
+        private void BuildUI(Fare rule)
         {
             var layout = new TableLayoutPanel
             {

@@ -26,8 +26,6 @@
         Motorbike,
         Car
     }
-    // FIX: Chỉ giữ Unpaid và Paid — hệ thống chỉ hỗ trợ thanh toán tiền mặt,
-    // không có giao dịch điện tử nên trạng thái Failed không có ý nghĩa.
     public enum PaymentStatus
     {
         Unpaid,

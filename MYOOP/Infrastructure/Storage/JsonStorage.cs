@@ -12,7 +12,7 @@ namespace OOP.Infrastructure.Storage
         {
             typeof(User), typeof(Passenger), typeof(Driver), typeof(Admin),
             typeof(Vehicle), typeof(Motorbike), typeof(Car),
-            typeof(Trip), typeof(Payment), typeof(Rating), typeof(FareRule), typeof(Location)
+            typeof(Trip), typeof(Payment), typeof(Rating), typeof(Fare), typeof(Location)
         };
 
         public JsonStorage(string basePath)

@@ -31,12 +31,12 @@ namespace OOP.Application.Services
             return await _tripRepo.GetAll();
         }
 
-        public async Task<List<FareRule>> GetFareRules()
+        public async Task<List<Fare>> GetFareRules()
         {
             return await _fareRuleRepo.GetAll();
         }
 
-        public async Task UpdateFareRule(FareRule rule)
+        public async Task UpdateFareRule(Fare rule)
         {
             if (rule == null) throw new ArgumentNullException(nameof(rule));
 

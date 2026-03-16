@@ -14,7 +14,7 @@ namespace MYOOP.Presentation.TripForms
         private readonly ITripService _tripService;
         private readonly IRouteService _routeService;
 
-        private Trip? trip;
+        private Trip? _trip;
 
         private GMapControl Map = null!;
         private GMapOverlay markerOverlay = new("markers");
@@ -28,8 +28,6 @@ namespace MYOOP.Presentation.TripForms
         private Label LabelFare = null!;
         private Label LabelStatus = null!;
 
-        // FIX: thêm ButtonMarkArrived — state machine yêu cầu Matched → Arrived → Ongoing.
-        // Trước đây form chỉ có StartTrip và CompleteTrip → tài xế không thể đi qua bước Arrived từ UI.
         private Button ButtonMarkArrived = null!;
         private Button ButtonStartTrip = null!;
         private Button ButtonCompleteTrip = null!;
@@ -47,7 +45,6 @@ namespace MYOOP.Presentation.TripForms
             _routeService = routeService;
 
             InitializeUI();
-            // FIX: async void Load không có try/catch → exception crash app.
             Load += async (_, _) =>
             {
                 try { await OnFormLoad(); }
@@ -62,7 +59,7 @@ namespace MYOOP.Presentation.TripForms
 
         private void InitializeUI()
         {
-            Text = "Driver - Chuyến đi";
+            Text = "Driver – Chuyến đi";
             Size = new Size(1000, 650);
             StartPosition = FormStartPosition.CenterScreen;
 
@@ -81,7 +78,13 @@ namespace MYOOP.Presentation.TripForms
 
         private void BuildTripPanel()
         {
-            PanelTripInfo = new Panel { Dock = DockStyle.Right, Width = 320 };
+            PanelTripInfo = new Panel
+            {
+                Dock = DockStyle.Right,
+                Width = 320,
+                BackColor = Color.White,
+                Padding = new Padding(0, 0, 0, 8)
+            };
 
             int y = 20;
             LabelTripId = CreateLabel(ref y);
@@ -93,16 +96,19 @@ namespace MYOOP.Presentation.TripForms
 
             y += 10;
 
-            // FIX: nút "Đã đến điểm đón" — Matched → Arrived
             ButtonMarkArrived = MakeBtn("📍  Đã đến điểm đón", ref y);
+            ButtonMarkArrived.BackColor = Color.FromArgb(13, 110, 253);
+            ButtonMarkArrived.ForeColor = Color.White;
             ButtonMarkArrived.Click += async (_, _) => await OnMarkArrivedClicked();
 
-            // Arrived → Ongoing
             ButtonStartTrip = MakeBtn("▶  Bắt đầu chuyến", ref y);
+            ButtonStartTrip.BackColor = Color.FromArgb(25, 135, 84);
+            ButtonStartTrip.ForeColor = Color.White;
             ButtonStartTrip.Click += async (_, _) => await OnStartTripClicked();
 
-            // Ongoing → Completed
             ButtonCompleteTrip = MakeBtn("✓  Hoàn thành chuyến", ref y);
+            ButtonCompleteTrip.BackColor = Color.FromArgb(102, 16, 242);
+            ButtonCompleteTrip.ForeColor = Color.White;
             ButtonCompleteTrip.Click += async (_, _) => await OnCompleteTripClicked();
 
             ButtonBack = MakeBtn("← Quay lại", ref y);

@@ -1,18 +1,15 @@
-﻿using GMap.NET;
-using GMap.NET.MapProviders;
-using OOP.Application.Services;
-using OOP.Application.Services.Implementations;
+﻿using OOP.Application.Services;
+using OOP.Infrastructure.Map;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
-using OOP.Infrastructure.Storage;
-using OOP.Infrastructure.Map;
 using OOP.Infrastructure.Repositories;
+using OOP.Infrastructure.Storage;
 using OOP.Presentation;
 using OOP.Presentation.TripForms;
+using OOP.Presentation.Map;
 using DomainLocation = OOP.Domain.Entities.Location;
-
 
 namespace OOP
 {
@@ -23,58 +20,61 @@ namespace OOP
         {
             System.Windows.Forms.Application.EnableVisualStyles();
             System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
-            GMapProvider.UserAgent =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-            GMaps.Instance.Mode = AccessMode.ServerAndCache;
-            // 1. Khởi tạo đường dẫn ngay tại thư mục chứa file .exe cho dễ kiếm
+
+            MapControl.InitializeMapProvider();
+
+            // ── Data directory ────────────────────────────────────────────────
             string dataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
 
             try
             {
-                // Nếu chưa có thư mục Data thì tạo mới
-                if (!Directory.Exists(dataPath))
-                {
-                    Directory.CreateDirectory(dataPath);
-                }
+                Directory.CreateDirectory(dataPath); // no-op if already exists
             }
             catch (Exception ex)
             {
-                // Nếu vẫn bị lỗi quyền, thông báo ngay để bạn biết đường chạy quyền Admin
-                MessageBox.Show($"Không thể tạo thư mục lưu dữ liệu tại: {dataPath}\nLỗi: {ex.Message}",
-                                "Lỗi Quyền Truy Cập", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(
+                    $"Không thể tạo thư mục lưu dữ liệu tại:\n{dataPath}\n\nLỗi: {ex.Message}\n\n" +
+                    "Vui lòng chạy ứng dụng với quyền Administrator.",
+                    "Lỗi Quyền Truy Cập",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                return; // cannot run safely without the data directory
             }
 
             var storage = new JsonStorage(dataPath);
 
-            // 2. Khởi tạo Repositories & Map Services
+            // ── Repositories ──────────────────────────────────────────────────
             IUserRepository userRepo = new UserRepository(storage);
             ITripRepository tripRepo = new TripRepository(storage);
             IFareRuleRepository fareRepo = new FareRuleRepository(storage);
             IRatingRepository ratingRepo = new RatingRepository(storage);
             IPaymentRepository paymentRepo = new PaymentRepository(storage);
 
-            // Khởi tạo hệ thống Map đúng chuẩn (Provider -> Service)
+            // ── Map ───────────────────────────────────────────────────────────
             IMapRouteProvider mapProvider = new MapRouteProvider();
             IRouteService routeService = new RouteService(mapProvider);
 
-            // 3. Khởi tạo Application Services
+            // ── Application services ──────────────────────────────────────────
             var userService = new UserService(userRepo);
             var authService = new AuthService(userRepo);
             var paymentService = new PaymentService(paymentRepo, fareRepo);
-            var fareRuleService = new FareRuleService(fareRepo);
+            var fareRuleService = new FareService(fareRepo);
             var notificationService = new NotificationService(userRepo, tripRepo);
+
             var tripNotificationSubscriber =
-    new TripNotificationSubscriber(notificationService, tripRepo);
+                new TripNotificationSubscriber(notificationService, tripRepo);
 
             notificationService.OnTripUpdated +=
                 async (tripId, message) =>
                     await tripNotificationSubscriber.Handle(tripId, message);
+
             var matchingService = new DriverMatchingService(userRepo, routeService);
             var adminService = new AdminService(userRepo, tripRepo, fareRepo);
             var ratingService = new RatingService(ratingRepo, userRepo, tripRepo);
-            var httpClient = new HttpClient();
+
+            using var httpClient = new HttpClient();
             httpClient.DefaultRequestHeaders.Add("User-Agent", "RideGo-App/1.0");
+
             ITripService tripService = new TripService(
                 tripRepo,
                 userRepo,

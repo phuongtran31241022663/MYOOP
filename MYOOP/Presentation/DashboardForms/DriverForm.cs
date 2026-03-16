@@ -55,8 +55,11 @@ namespace OOP.Presentation
 
             InitForm();
             BuildUI();
-
-            Shown += async (s, e) => await LoadAvailableTrips();
+            Load += async (s, e) =>
+            {
+                if (_dgvTrips != null)
+                    await LoadAvailableTrips();
+            };
         }
 
         // ─── Setup ───────────────────────────────────────────────────────────────
@@ -492,8 +495,8 @@ namespace OOP.Presentation
             _pnlCurrentTrip.Visible = true;
             _lblCurrentTrip.Text =
                 $"🚗 Chuyến hiện tại  [{StatusLabel(_currentTrip.Status)}]   " +
-                $"Đón: {_currentTrip.PickupLocation.Label}  →  " +
-                $"Đến: {_currentTrip.DestinationLocation.Label}   " +
+                $"Đón: {_currentTrip.PickupLocation.Name}  →  " +
+                $"Đến: {_currentTrip.DestinationLocation.Name}   " +
                 $"Cước: {(_currentTrip.Fare > 0 ? _currentTrip.Fare.ToString("N0") + " đ" : "Chưa tính")}";
         }
 

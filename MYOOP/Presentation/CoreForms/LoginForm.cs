@@ -1,4 +1,4 @@
-﻿using OOP.Application.Services.Interfaces;
+using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
 
 namespace OOP.Presentation
@@ -207,6 +207,36 @@ namespace OOP.Presentation
             });
             Controls.Add(card);
             Shown += (s, e) => _txtPhone.Focus();
+            AttachKeyboardShortcuts();
+        }
+
+        /// <summary>
+        /// Thiết lập hành vi phím Enter:
+        /// - Enter tại ô SĐT → chuyển sang ô mật khẩu.
+        /// - Enter tại ô mật khẩu (khi hợp lệ) → submit form đăng nhập.
+        /// </summary>
+        private void AttachKeyboardShortcuts()
+        {
+            _txtPhone.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Enter)
+                {
+                    e.SuppressKeyPress = true;
+                    _txtPassword.Focus();
+                }
+            };
+
+            _txtPassword.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Enter)
+                {
+                    e.SuppressKeyPress = true;
+                    if (_btnLogin.Enabled)
+                    {
+                        OnLoginClicked(_btnLogin, EventArgs.Empty);
+                    }
+                }
+            };
         }
 
         private void OnInputChanged(object? sender, EventArgs e)

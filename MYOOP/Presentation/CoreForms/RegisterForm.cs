@@ -1,4 +1,4 @@
-﻿using OOP.Application.Interfaces;
+using OOP.Application.Interfaces;
 using OOP.Application.Services.Interfaces;
 using OOP.Application.Validators;
 using OOP.Domain.Entities;
@@ -10,6 +10,11 @@ namespace OOP.Presentation
     {
         // --- Dependencies ---
         private readonly IAuthService _authService;
+
+        /// <summary>
+        /// Phát ra khi đăng ký thành công để caller (ví dụ MainForm) có thể auto-login.
+        /// </summary>
+        public event Action<string, string, UserRole>? RegisteredSuccessfully;
 
         // --- Controls: common ---
         private RadioButton _rdoPassenger = null!;
@@ -166,6 +171,7 @@ namespace OOP.Presentation
             // Họ tên
             AddField(card, "Họ và tên", ref y,
                 _txtName = MakeInput("Nhập họ và tên đầy đủ"));
+            AttachEnterToNext(_txtName);
 
             // Số điện thoại
             AddField(card, "Số điện thoại", ref y,
@@ -221,6 +227,8 @@ namespace OOP.Presentation
             passRow.Controls.Add(_btnTogglePass);
             card.Controls.Add(passRow);
             y += InputHeight + Gap;
+            AttachEnterToNext(_txtPhone);
+            AttachEnterToNext(_txtPassword);
 
             // Error label
             _lblError = new Label
@@ -360,7 +368,11 @@ namespace OOP.Presentation
                 if (_rdoPassenger.Checked)
                 {
                     await _authService.RegisterPassenger(name, phone, password);
-                    ShowSuccess("Đăng ký hành khách thành công! Vui lòng đăng nhập.");
+                    ShowSuccess(
+                        "Đăng ký hành khách thành công! Đang đăng nhập...",
+                        phone,
+                        password,
+                        UserRole.Passenger);
                 }
                 else
                 {
@@ -382,21 +394,24 @@ namespace OOP.Presentation
 
                     // 3. Khởi tạo vị trí mặc định (Ví dụ: Trung tâm Quận 1)
                     var defaultLocation = new OOP.Domain.Entities.Location(
-                        label: "Vị trí hiện tại",
+                        name: "Vị trí hiện tại",
                         address: "TP. Hồ Chí Minh",
                         lat: 10.7769,
                         lng: 106.7009);
 
                     // 4. Gọi service đăng ký tài xế
                     await _authService.RegisterDriver(
-        name,
-        phone,
-        password,
-        vehicle,
-        defaultLocation,
-        license
-    );
-                    ShowSuccess("Đăng ký tài xế thành công! Vui lòng đăng nhập.");
+                        name,
+                        phone,
+                        password,
+                        vehicle,
+                        defaultLocation,
+                        license);
+                    ShowSuccess(
+                        "Đăng ký tài xế thành công! Đang đăng nhập...",
+                        phone,
+                        password,
+                        UserRole.Driver);
                 }
             }
             catch (Exception ex)
@@ -494,6 +509,21 @@ namespace OOP.Presentation
                     (ClientSize.Width - CardWidth) / 2, top);
             }
         }
+
+        /// <summary>
+        /// Ở field cuối cùng, Enter sẽ kích hoạt luôn nút Đăng ký.
+        /// Dùng cho trải nghiệm "Enter tại field cuối → Register".
+        /// </summary>
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == Keys.Enter && _btnRegister.Enabled)
+            {
+                // Nếu focus đang ở một control input trong form thì cho phép submit nhanh
+                _btnRegister.PerformClick();
+                return true;
+            }
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
         private void UpdateVehicleTypeUI()
         {
             var item = (VehicleItem)_cmbVehicleType.SelectedItem!;
@@ -515,12 +545,16 @@ namespace OOP.Presentation
                     _numCapacity.Value = 4;
             }
         }
-        private void ShowSuccess(string message)
+        private void ShowSuccess(string message, string phone, string password, UserRole role)
         {
             MessageBox.Show(message, "Thành công",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+            // Phát event để form gọi RegisterForm có thể tự đăng nhập
+            RegisteredSuccessfully?.Invoke(phone, password, role);
+
             ResetForm();
-            Close(); // quay về LoginForm
+            Close(); // quay về màn trước (thường là MainForm)
         }
 
         private void ResetForm()
@@ -538,6 +572,21 @@ namespace OOP.Presentation
             _numCapacity.Value = 2;
             _lblError.Text = "";
             _errorProvider.Clear();
+        }
+
+        /// <summary>
+        /// Gắn hành vi Enter → chuyển sang control tiếp theo.
+        /// </summary>
+        private void AttachEnterToNext(Control control)
+        {
+            control.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Enter)
+                {
+                    e.SuppressKeyPress = true;
+                    SelectNextControl((Control)s!, true, true, true, true);
+                }
+            };
         }
 
         private void SetLoading(bool loading)

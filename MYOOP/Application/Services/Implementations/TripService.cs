@@ -13,7 +13,7 @@ namespace OOP.Application.Services
         private readonly ITripRepository _tripRepo;
         private readonly IUserRepository _userRepo;
         private readonly IFareRuleRepository _fareRuleRepo;
-        private readonly IFareRuleService _fareService;
+        private readonly IFareService _fareService;
         private readonly IPaymentService _paymentService;
         private readonly IDriverMatchingService _matchingService;
         private readonly INotificationService _notificationService;
@@ -22,7 +22,7 @@ namespace OOP.Application.Services
             ITripRepository tripRepo,
             IUserRepository userRepo,
             IFareRuleRepository fareRuleRepo,
-            IFareRuleService fareService,
+            IFareService fareService,
             IPaymentService paymentService,
             IDriverMatchingService matchingService,
             INotificationService notificationService,

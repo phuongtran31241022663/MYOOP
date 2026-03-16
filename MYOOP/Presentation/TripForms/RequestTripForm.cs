@@ -1,6 +1,7 @@
 using GMap.NET;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Enums;
+using OOP.Infrastructure.Map;
 using OOP.Presentation.Map;
 using DomainLocation = OOP.Domain.Entities.Location;
 
@@ -11,7 +12,7 @@ namespace OOP.Presentation.TripForms
         private readonly Guid _passengerId;
         private readonly ITripService _tripService;
         private readonly IRouteService _routeService;
-        private readonly IFareRuleService _fareRuleService;
+        private readonly IFareService _fareRuleService;
         private readonly HttpClient _http;
 
         private MapControl _mapControl = null!;
@@ -23,13 +24,23 @@ namespace OOP.Presentation.TripForms
         private Button ButtonRequestTrip = null!;
         private Button ButtonBack = null!;
 
-        // FIX: nhận HttpClient từ ngoài thay vì new HttpClient() inline —
-        // tránh socket exhaustion khi form được mở nhiều lần.
+        private TextBox _activeTextBox = null!;
+
+        private readonly ListBox _lstGlobalSuggestions = new ListBox
+        {
+            Visible = false,
+            DrawMode = DrawMode.OwnerDrawFixed,
+            ItemHeight = 45
+        };
+
+        private readonly System.Windows.Forms.Timer _searchDebounceTimer =
+            new System.Windows.Forms.Timer { Interval = 500 };
+
         public RequestTripForm(
             Guid passengerId,
             ITripService tripService,
             IRouteService routeService,
-            IFareRuleService fareRuleService,
+            IFareService fareRuleService,
             HttpClient http)
         {
             _passengerId = passengerId;
@@ -41,10 +52,10 @@ namespace OOP.Presentation.TripForms
             InitForm();
             BuildUI();
 
-            // Sau khi UI dựng xong, set sẵn điểm đón = vị trí hiện tại
             this.Load += async (_, _) =>
             {
-                await _mapControl.ZoomToMyLocation();
+                var addr = await _mapControl.ZoomToMyLocation();
+                TextBoxPickup.Text = addr;
                 UpdateRequestButton();
             };
         }
@@ -58,7 +69,7 @@ namespace OOP.Presentation.TripForms
 
         private void BuildUI()
         {
-            // ── Toolbar panel (Dock Top) ──────────────────────────────────────
+            // ── Toolbar panel ─────────────────────────────────────────────────
             var panel = new FlowLayoutPanel
             {
                 Dock = DockStyle.Top,
@@ -115,7 +126,7 @@ namespace OOP.Presentation.TripForms
                 FlatStyle = FlatStyle.Flat,
                 Cursor = Cursors.Hand,
                 Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                Enabled = false   // FIX: disable cho đến khi chọn đủ 2 điểm
+                Enabled = false
             };
             ButtonRequestTrip.FlatAppearance.BorderSize = 0;
             ButtonRequestTrip.Click += async (_, _) => await OnRequestTripClicked();
@@ -130,6 +141,41 @@ namespace OOP.Presentation.TripForms
             };
             ButtonBack.Click += (_, _) => Close();
 
+            // ── Debounce timer ────────────────────────────────────────────────
+            _searchDebounceTimer.Tick += async (_, _) =>
+            {
+                _searchDebounceTimer.Stop();
+                await ExecuteSearch();
+            };
+
+            TextBoxPickup.TextChanged += (_, _) => RestartSearchTimer(TextBoxPickup);
+            TextBoxDestination.TextChanged += (_, _) => RestartSearchTimer(TextBoxDestination);
+
+            // ── Suggestion list ───────────────────────────────────────────────
+            _lstGlobalSuggestions.DrawItem += LstGlobalSuggestions_DrawItem;
+
+            _lstGlobalSuggestions.MouseClick += async (_, _) =>
+            {
+                if (_lstGlobalSuggestions.SelectedItem is not DomainLocation selected) return;
+
+                string displayText = string.IsNullOrEmpty(selected.Address)
+                    ? selected.Name
+                    : $"{selected.Name}, {selected.Address}";
+
+                _activeTextBox.Text = displayText;
+                _lstGlobalSuggestions.Visible = false;
+
+                bool isPickup = (_activeTextBox == TextBoxPickup);
+                await _mapControl.SelectLocation(selected, isPickup);
+
+                await UpdateEstimation();
+                UpdateRequestButton();
+            };
+
+            // Dismiss suggestions when clicking elsewhere
+            this.Click += (_, _) => _lstGlobalSuggestions.Visible = false;
+
+            // ── Build panel ───────────────────────────────────────────────────
             panel.Controls.Add(MakeLabel("Từ:"));
             panel.Controls.Add(TextBoxPickup);
             panel.Controls.Add(MakeLabel("Đến:"));
@@ -141,73 +187,134 @@ namespace OOP.Presentation.TripForms
             panel.Controls.Add(ButtonBack);
 
             // ── MapControl ────────────────────────────────────────────────────
-            // ── MapControl ────────────────────────────────────────────────────
-            _mapControl = new MapControl(_http, _routeService)
+            _mapControl = new MapControl(_http, _routeService) { Dock = DockStyle.Fill };
+            _mapControl.LocationSelected += (point, address, isPickup) =>
             {
-                Dock = DockStyle.Fill
-            };
-            _mapControl.LocationSelected += (point, address) =>
-            {
-                // Điền lần lượt: click đầu = điểm đón, click sau = điểm đến
-                if (string.IsNullOrEmpty(TextBoxPickup.Text))
-                    TextBoxPickup.Text = address;
-                else
-                    TextBoxDestination.Text = address;
+                if (isPickup) TextBoxPickup.Text = address;
+                else TextBoxDestination.Text = address;
 
                 UpdateRequestButton();
                 _ = UpdateEstimation();
             };
 
-            // FIX: thứ tự Add quan trọng — panel Dock=Top phải Add trước,
-            // map Dock=Fill Add sau để Fill lấp phần còn lại bên dưới panel.
-            Controls.Add(_mapControl);  // Fill → thêm trước
-            Controls.Add(panel);        // Top  → thêm sau (WinForms tính layout từ cuối lên)
+            // Add the suggestion list to the form so it floats over everything
+            Controls.Add(_lstGlobalSuggestions);
+            _lstGlobalSuggestions.BringToFront();
 
-            // ═══════════════════════════════════════════════════════════════════
-            // FIX: gọi Show() — đây là bước BẮT BUỘC khi nhúng Form với
-            // TopLevel = false. Nếu bỏ qua, form con tồn tại trong bộ nhớ
-            // nhưng không render → chỉ thấy nền trắng.
-            // ═══════════════════════════════════════════════════════════════════
+            Controls.Add(_mapControl); // Fill — add first
+            Controls.Add(panel);       // Top  — add last (WinForms lays out from end of list)
             _mapControl.Show();
         }
 
-        // ── Logic ─────────────────────────────────────────────────────────────
+        // ── Search / suggestions ──────────────────────────────────────────────
+        private void RestartSearchTimer(TextBox tb)
+        {
+            _activeTextBox = tb;
+            _searchDebounceTimer.Stop();
+            _searchDebounceTimer.Start();
+        }
 
+        private async Task ExecuteSearch()
+        {
+            string query = _activeTextBox?.Text ?? "";
+            if (query.Length < 3)
+            {
+                _lstGlobalSuggestions.Visible = false;
+                return;
+            }
+
+            var results = await _mapControl.GetSuggestions(query);
+            if (results != null && results.Count > 0)
+            {
+                _lstGlobalSuggestions.Items.Clear();
+                foreach (var item in results) _lstGlobalSuggestions.Items.Add(item);
+
+                Point screenPos = _activeTextBox.Parent.PointToScreen(
+                    new Point(_activeTextBox.Left, _activeTextBox.Bottom));
+                _lstGlobalSuggestions.Location = this.PointToClient(screenPos);
+                _lstGlobalSuggestions.Width = _activeTextBox.Width;
+                _lstGlobalSuggestions.Height = Math.Min(results.Count * 45, 180);
+                _lstGlobalSuggestions.Visible = true;
+                _lstGlobalSuggestions.BringToFront();
+            }
+            else
+            {
+                _lstGlobalSuggestions.Visible = false;
+            }
+        }
+
+        private void LstGlobalSuggestions_DrawItem(object? sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0) return;
+            e.DrawBackground();
+
+            var item = (DomainLocation)_lstGlobalSuggestions.Items[e.Index];
+
+            using var fontName = new Font(e.Font!, FontStyle.Bold);
+            using var fontAddr = new Font(e.Font!.FontFamily, 8);
+
+            string name = item.Name ?? "";
+            string address = item.Address ?? "";
+
+            e.Graphics.DrawString(name, fontName, Brushes.Black, e.Bounds.X + 5, e.Bounds.Y + 2);
+            e.Graphics.DrawString(address, fontAddr, Brushes.Gray, e.Bounds.X + 5, e.Bounds.Y + 22);
+
+            e.DrawFocusRectangle();
+        }
+
+        // ── Logic ─────────────────────────────────────────────────────────────
         private void UpdateRequestButton()
         {
-            // Chỉ cần người dùng chọn điểm đến trên bản đồ
-            bool ready = _mapControl.DropoffPoint != null;
-            ButtonRequestTrip.Enabled = ready;
-            ButtonRequestTrip.BackColor = ready
+            bool hasPickup = _mapControl.PickupPoint != default(PointLatLng);
+            bool hasDropoff = _mapControl.DropoffPoint != null;
+
+            ButtonRequestTrip.Enabled = hasPickup && hasDropoff;
+            ButtonRequestTrip.BackColor = ButtonRequestTrip.Enabled
                 ? Color.FromArgb(25, 135, 84)
-                : Color.FromArgb(180, 180, 180);
+                : Color.Gray;
         }
 
         private async Task UpdateEstimation()
         {
-            var p1 = _mapControl.PickupPoint;
-            var p2 = _mapControl.DropoffPoint;
-            if (p2 == null) return;
+            PointLatLng p1 = _mapControl.PickupPoint;
+            PointLatLng? p2 = _mapControl.DropoffPoint;
+
+            if (p2 == null)
+            {
+                LabelDistance.Text = "Cách: --";
+                LabelEstimatedFare.Text = "Giá: --";
+                return;
+            }
 
             try
             {
-                var pickup = new DomainLocation("P", "P", p1.Lat, p1.Lng);
-                var dest = new DomainLocation("D", "D", p2.Value.Lat, p2.Value.Lng);
+                var pickup = new DomainLocation("Pickup", "Pickup", p1.Lat, p1.Lng);
+                var dest = new DomainLocation("Destination", "Destination", p2.Value.Lat, p2.Value.Lng);
 
-                var route = await _routeService.GetFullRouteAsync(pickup, dest);
-                if (route == null) return;
+                MapRouteResult route = await _routeService.GetFullRouteAsync(pickup, dest);
+                if (route == null)
+                {
+                    LabelDistance.Text = "Cách: Lỗi tính toán";
+                    LabelEstimatedFare.Text = "Giá: Không tính được";
+                    return;
+                }
 
                 LabelDistance.Text = $"Cách: {route.Distance:F2} km";
 
-                var vehicle = (VehicleType)ComboVehicleType.SelectedItem!;
+                VehicleType vehicle = (VehicleType)ComboVehicleType.SelectedItem!;
                 var fareRule = await _fareRuleService.GetFareRule(vehicle);
                 if (fareRule != null)
                 {
-                    var estimatedFare = fareRule.CalculateFare(route.Distance);
-                    LabelEstimatedFare.Text = $"Giá: {estimatedFare:N0} VNĐ";
+                    decimal fare = fareRule.CalculateFare(route.Distance);
+                    LabelEstimatedFare.Text = $"Giá: {fare:N0} VNĐ";
                 }
             }
-            catch { /* estimation là best-effort, không crash nếu lỗi network */ }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[UpdateEstimation] {ex}");
+                LabelDistance.Text = "Cách: Lỗi";
+                LabelEstimatedFare.Text = "Giá: Lỗi";
+            }
         }
 
         private async Task OnRequestTripClicked()
@@ -249,6 +356,7 @@ namespace OOP.Presentation.TripForms
             }
         }
 
+        // ── Helpers ───────────────────────────────────────────────────────────
         private static Label MakeLabel(string text) => new Label
         {
             Text = text,
@@ -261,7 +369,10 @@ namespace OOP.Presentation.TripForms
 
         protected override void Dispose(bool disposing)
         {
-            // Không dispose _http — lifetime do caller quản lý
+            if (disposing)
+            {
+                _searchDebounceTimer.Dispose();
+            }
             base.Dispose(disposing);
         }
     }
