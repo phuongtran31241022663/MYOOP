@@ -1,4 +1,4 @@
-using OOP.Application.Validators;
+﻿using OOP.Application.Validators;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
@@ -55,16 +55,13 @@ namespace OOP.Application.Services
         {
             if (trip == null) throw new ArgumentNullException(nameof(trip));
 
-            // Gọi hàm tìm tài xế đã được sửa ở trên
             var driver = await FindAvailableDriver(trip.PickupLocation, trip.VehicleType);
 
             if (driver == null) return null;
 
             TripValidator.ValidateDriverAssignment(trip, driver);
 
-            return await FindAvailableDriver(
-         trip.PickupLocation,
-         trip.VehicleType);
+            return driver;
         }
     }
 }

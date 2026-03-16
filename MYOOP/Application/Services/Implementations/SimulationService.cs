@@ -1,4 +1,4 @@
-using OOP.Application.Interfaces;
+﻿using OOP.Application.Interfaces;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
@@ -14,9 +14,7 @@ namespace OOP.Application.Services
         private readonly ITripService _tripService;
         private readonly IRouteService _routeService;
 
-        // Bước di chuyển mỗi lần simulate (độ — ~0.001° ≈ 100m)
-        private const double StepDegrees = 0.001;
-
+        private const double StepMeters = 100;
         private static readonly Random _rng = new();
 
         public SimulationService(
@@ -139,28 +137,44 @@ namespace OOP.Application.Services
 
         private static Location StepToward(Location current, Location target)
         {
-            double dLat = target.Lat - current.Lat;
-            double dLng = target.Lng - current.Lng;
-            double dist = Math.Sqrt(dLat * dLat + dLng * dLng);
+            const double metersPerDegLat = 111320;
 
-            if (dist < StepDegrees)
-                return current;
+            double latRad = current.Lat * Math.PI / 180;
+            double metersPerDegLng = metersPerDegLat * Math.Cos(latRad);
 
-            double newLat = current.Lat + (dLat / dist) * StepDegrees;
-            double newLng = current.Lng + (dLng / dist) * StepDegrees;
+            double dLatMeters = (target.Lat - current.Lat) * metersPerDegLat;
+            double dLngMeters = (target.Lng - current.Lng) * metersPerDegLng;
 
-            return new Location(current.Label, current.Address, newLat, newLng);
+            double dist = Math.Sqrt(dLatMeters * dLatMeters + dLngMeters * dLngMeters);
+
+            if (dist < StepMeters)
+                return target;
+
+            double stepLat = (dLatMeters / dist) * StepMeters;
+            double stepLng = (dLngMeters / dist) * StepMeters;
+
+            double newLat = current.Lat + stepLat / metersPerDegLat;
+            double newLng = current.Lng + stepLng / metersPerDegLng;
+
+            return new Location(current.Name, current.Address, newLat, newLng);
         }
 
         private static Location RandomStep(Location current)
         {
-            double dLat = (_rng.NextDouble() - 0.5) * 2 * StepDegrees;
-            double dLng = (_rng.NextDouble() - 0.5) * 2 * StepDegrees;
+            const double metersPerDegLat = 111320;
 
-            double newLat = Math.Clamp(current.Lat + dLat, -90, 90);
-            double newLng = Math.Clamp(current.Lng + dLng, -180, 180);
+            double latRad = current.Lat * Math.PI / 180;
+            double metersPerDegLng = metersPerDegLat * Math.Cos(latRad);
 
-            return new Location(current.Label, current.Address, newLat, newLng);
+            double dLat = (_rng.NextDouble() - 0.5) * 2 * StepMeters / metersPerDegLat;
+            double dLng = (_rng.NextDouble() - 0.5) * 2 * StepMeters / metersPerDegLng;
+
+            return new Location(
+                current.Name,
+                current.Address,
+                current.Lat + dLat,
+                current.Lng + dLng
+            );
         }
     }
 }

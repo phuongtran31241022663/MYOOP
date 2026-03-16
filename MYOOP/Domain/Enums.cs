@@ -1,4 +1,4 @@
-﻿namespace OOP.Domain.Enums
+﻿﻿namespace OOP.Domain.Enums
 {
     public enum UserRole
     {

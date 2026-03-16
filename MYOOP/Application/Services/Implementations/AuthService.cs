@@ -1,4 +1,4 @@
-﻿using OOP.Application.Services.Interfaces;
+﻿﻿using OOP.Application.Services.Interfaces;
 using OOP.Application.Validators;
 using OOP.Domain.Entities;
 using OOP.Domain.Interfaces;
@@ -71,13 +71,16 @@ namespace OOP.Application.Services
 
             await EnsurePhoneNotExists(phone);
 
+            var driverId = Guid.NewGuid();
+            var vehicleWithOwner = CloneVehicleWithDriver(vehicle, driverId);
+
             var driver = new Driver(
-                Guid.NewGuid(),
+                driverId,
                 fullname.Trim(),
                 phone,
                 HashPassword(password),
                 true,
-                vehicle,
+                vehicleWithOwner,
                 location,
                 licenseNumber
             );
@@ -144,5 +147,31 @@ namespace OOP.Application.Services
             if (await _userRepo.ExistsByPhone(phone))
                 throw new InvalidOperationException("Số điện thoại đã được đăng ký.");
         }
+
+        private static Vehicle CloneVehicleWithDriver(Vehicle vehicle, Guid driverId)
+        {
+            if (driverId == Guid.Empty)
+                throw new ArgumentException("DriverId không hợp lệ.", nameof(driverId));
+
+            return vehicle switch
+            {
+                Motorbike m => new Motorbike(
+                    driverId,
+                    m.PlateNumber,
+                    m.Brand,
+                    m.Model,
+                    m.Color),
+                Car c => new Car(
+                    driverId,
+                    c.PlateNumber,
+                    c.Brand,
+                    c.Model,
+                    c.Color,
+                    c.Capacity),
+                _ => throw new InvalidOperationException("Loại xe không được hỗ trợ.")
+            };
+        }
     }
 }
+
+

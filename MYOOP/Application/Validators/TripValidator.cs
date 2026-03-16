@@ -1,14 +1,14 @@
-using GMap.NET.MapProviders;
+﻿using GMap.NET.MapProviders;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
-using DomianLocation = OOP.Domain.Entities.Location;
+using DomainLocation = OOP.Domain.Entities.Location;
 
 namespace OOP.Application.Validators
 {
     public static class TripValidator
     {
         // Gọi trước khi tạo Trip mới
-        public static void ValidateRequest(DomianLocation pickup, DomianLocation destination, VehicleType vehicleType, double routeDistance)
+        public static void ValidateRequest(DomainLocation pickup, DomainLocation destination, VehicleType vehicleType, double routeDistance)
         {
             if (pickup == null)
                 throw new ArgumentNullException(nameof(pickup), "Điểm đón không được để trống.");
@@ -21,7 +21,7 @@ namespace OOP.Application.Validators
 
             if (!Enum.IsDefined(typeof(VehicleType), vehicleType))
                 throw new ArgumentException("Loại xe không hợp lệ.");
-            // Cho phép chuyến đi khoảng cách rất ngắn; chỉ chặn khi route tính được <= 0
+
             if (routeDistance <= 0)
                 throw new ArgumentException("Không tính được khoảng cách lộ trình cho chuyến đi.");
         }

@@ -1,11 +1,13 @@
-﻿using GMap.NET;
+﻿﻿using GMap.NET;
 using GMap.NET.MapProviders;
 using GMap.NET.WindowsForms;
 using GMap.NET.WindowsForms.Markers;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
 
-namespace MYOOP.Presentation.TripForms
+// FIX #1: was "MYOOP.Presentation.TripForms" — typo caused the class to live
+//         in a different namespace from the rest of the project.
+namespace OOP.Presentation.TripForms
 {
     public class DriverTripForm : Form
     {
@@ -124,22 +126,39 @@ namespace MYOOP.Presentation.TripForms
 
         private Label CreateLabel(ref int y)
         {
-            var lbl = new Label { Location = new Point(20, y), Width = 280, Height = 24 };
+            var lbl = new Label
+            {
+                Location = new Point(20, y),
+                Width = 280,
+                Height = 24,
+                Font = new Font("Segoe UI", 9.5f),
+                ForeColor = Color.FromArgb(40, 40, 40)
+            };
             y += 28;
             return lbl;
         }
 
         private Button MakeBtn(string text, ref int y)
         {
-            var btn = new Button { Text = text, Location = new Point(20, y), Width = 270, Height = 36 };
+            var btn = new Button
+            {
+                Text = text,
+                Location = new Point(20, y),
+                Width = 270,
+                Height = 36,
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
+            };
+            btn.FlatAppearance.BorderSize = 0;
             y += 44;
             return btn;
         }
 
         private async Task OnFormLoad()
         {
-            trip = await _tripService.GetTrip(_tripId);
-            if (trip == null) { MessageBox.Show("Không tìm thấy chuyến đi."); Close(); return; }
+            _trip = await _tripService.GetTrip(_tripId);
+            if (_trip == null) { MessageBox.Show("Không tìm thấy chuyến đi."); Close(); return; }
 
             RefreshLabels();
             SetMarkers();
@@ -147,45 +166,58 @@ namespace MYOOP.Presentation.TripForms
             UpdateButtonStates();
         }
 
+        // FIX #2: all UI mutations now run on the UI thread
         private void RefreshLabels()
         {
-            if (trip == null) return;
-            LabelTripId.Text = $"Trip: {trip.Id.ToString()[..8]}";
-            LabelPickup.Text = $"Đón: {trip.PickupLocation.Address}";
-            LabelDestination.Text = $"Đến: {trip.DestinationLocation.Address}";
-            LabelDistance.Text = $"Khoảng cách: {trip.Distance:F2} km";
-            LabelFare.Text = $"Cước phí: {trip.Fare:N0} VNĐ";
-            LabelStatus.Text = $"Trạng thái: {trip.Status}";
+            if (_trip == null) return;
+            if (InvokeRequired) { BeginInvoke(RefreshLabels); return; }
+
+            LabelTripId.Text = $"Trip: {_trip.Id.ToString()[..8]}";
+            LabelPickup.Text = $"Đón: {_trip.PickupLocation.Address}";
+            LabelDestination.Text = $"Đến: {_trip.DestinationLocation.Address}";
+            LabelDistance.Text = $"Khoảng cách: {_trip.Distance:F2} km";
+            LabelFare.Text = $"Cước phí: {(_trip.Fare > 0 ? $"{_trip.Fare:N0} VNĐ" : "Chưa tính")}";
+            LabelStatus.Text = $"Trạng thái: {StatusLabel(_trip.Status)}";
         }
 
         private void UpdateButtonStates()
         {
-            if (trip == null) return;
-            ButtonMarkArrived.Enabled = trip.Status == OOP.Domain.Enums.TripStatus.Matched;
-            ButtonStartTrip.Enabled = trip.Status == OOP.Domain.Enums.TripStatus.Arrived;
-            ButtonCompleteTrip.Enabled = trip.Status == OOP.Domain.Enums.TripStatus.Ongoing;
+            if (_trip == null) return;
+            if (InvokeRequired) { BeginInvoke(UpdateButtonStates); return; }
+
+            ButtonMarkArrived.Enabled = _trip.Status == OOP.Domain.Enums.TripStatus.Matched;
+            ButtonStartTrip.Enabled = _trip.Status == OOP.Domain.Enums.TripStatus.Arrived;
+            ButtonCompleteTrip.Enabled = _trip.Status == OOP.Domain.Enums.TripStatus.Ongoing;
         }
 
         private void SetMarkers()
         {
             markerOverlay.Markers.Clear();
             markerOverlay.Markers.Add(new GMarkerGoogle(
-                new PointLatLng(trip!.PickupLocation.Lat, trip.PickupLocation.Lng),
-                GMarkerGoogleType.green_dot));
+                new PointLatLng(_trip!.PickupLocation.Lat, _trip.PickupLocation.Lng),
+                GMarkerGoogleType.green_dot)
+            { ToolTipText = "Điểm đón" });
             markerOverlay.Markers.Add(new GMarkerGoogle(
-                new PointLatLng(trip.DestinationLocation.Lat, trip.DestinationLocation.Lng),
-                GMarkerGoogleType.red_dot));
+                new PointLatLng(_trip.DestinationLocation.Lat, _trip.DestinationLocation.Lng),
+                GMarkerGoogleType.red_dot)
+            { ToolTipText = "Điểm đến" });
         }
 
         private async Task DrawRoute()
         {
             var route = await _routeService.GetFullRouteAsync(
-                trip!.PickupLocation, trip.DestinationLocation);
-            if (route == null) return;
+                _trip!.PickupLocation, _trip.DestinationLocation);
+            if (route == null || route.Points.Count < 2) return;
 
+            // FIX #3: dispose the old Pen before clearing, and keep ownership clear
+            foreach (var r in routeOverlay.Routes) r.Stroke?.Dispose();
             routeOverlay.Routes.Clear();
+
+            var pen = new Pen(Color.FromArgb(180, 0, 120, 255), 4);
             var mapRoute = new GMapRoute(
-                route.Points.Select(p => new PointLatLng(p.Lat, p.Lng)), "tripRoute");
+                route.Points.Select(p => new PointLatLng(p.Lat, p.Lng)), "tripRoute")
+            { Stroke = pen };
+
             routeOverlay.Routes.Add(mapRoute);
             Map.ZoomAndCenterRoute(mapRoute);
         }
@@ -195,11 +227,11 @@ namespace MYOOP.Presentation.TripForms
             try
             {
                 await _tripService.MarkArrived(_tripId);
-                trip = await _tripService.GetTrip(_tripId);
+                _trip = await _tripService.GetTrip(_tripId);
                 RefreshLabels();
                 UpdateButtonStates();
             }
-            catch (Exception ex) { MessageBox.Show($"Lỗi: {ex.Message}"); }
+            catch (Exception ex) { ShowError(ex.Message); }
         }
 
         private async Task OnStartTripClicked()
@@ -207,24 +239,53 @@ namespace MYOOP.Presentation.TripForms
             try
             {
                 await _tripService.StartTrip(_tripId);
-                trip = await _tripService.GetTrip(_tripId);
+                _trip = await _tripService.GetTrip(_tripId);
                 RefreshLabels();
                 UpdateButtonStates();
             }
-            catch (Exception ex) { MessageBox.Show($"Lỗi: {ex.Message}"); }
+            catch (Exception ex) { ShowError(ex.Message); }
         }
 
         private async Task OnCompleteTripClicked()
         {
+            var confirm = MessageBox.Show(
+                "Xác nhận hoàn thành chuyến đi?",
+                "Hoàn thành", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (confirm != DialogResult.Yes) return;
+
             try
             {
                 await _tripService.CompleteTrip(_tripId);
-                trip = await _tripService.GetTrip(_tripId);
+                _trip = await _tripService.GetTrip(_tripId);
                 RefreshLabels();
                 UpdateButtonStates();
-                MessageBox.Show("Chuyến đi hoàn thành. Xác nhận đã nhận tiền mặt.");
+                MessageBox.Show("Chuyến đi hoàn thành. Xác nhận đã nhận tiền mặt.",
+                    "Hoàn thành", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
-            catch (Exception ex) { MessageBox.Show($"Lỗi: {ex.Message}"); }
+            catch (Exception ex) { ShowError(ex.Message); }
+        }
+
+        private static string StatusLabel(OOP.Domain.Enums.TripStatus status) => status switch
+        {
+            OOP.Domain.Enums.TripStatus.Matched => "🤝 Đã nhận",
+            OOP.Domain.Enums.TripStatus.Arrived => "📍 Đã đến nơi đón",
+            OOP.Domain.Enums.TripStatus.Ongoing => "🚗 Đang chạy",
+            OOP.Domain.Enums.TripStatus.Completed => "✅ Hoàn thành",
+            OOP.Domain.Enums.TripStatus.Cancelled => "❌ Đã hủy",
+            _ => status.ToString()
+        };
+
+        private static void ShowError(string msg) =>
+            MessageBox.Show(msg, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                // Dispose all route Pens on form close
+                foreach (var r in routeOverlay.Routes) r.Stroke?.Dispose();
+            }
+            base.Dispose(disposing);
         }
     }
 }

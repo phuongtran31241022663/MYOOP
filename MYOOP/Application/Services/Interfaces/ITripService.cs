@@ -1,4 +1,4 @@
-﻿using OOP.Domain.Entities;
+﻿﻿using OOP.Domain.Entities;
 using OOP.Domain.Enums;
 
 namespace OOP.Application.Services.Interfaces
@@ -18,6 +18,8 @@ namespace OOP.Application.Services.Interfaces
         Task CancelTrip(Guid tripId, string reason);
         Task<Trip?> GetTrip(Guid tripId);
         Task<List<Trip>> GetTripHistory(Guid userId);
+        Task<List<Trip>> GetAvailableTripsForDriver(Guid driverId);
     }
 
 }
+

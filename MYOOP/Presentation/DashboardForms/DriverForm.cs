@@ -1,7 +1,8 @@
-﻿using OOP.Application.Interfaces;
+﻿﻿using OOP.Application.Interfaces;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
+using OOP.Presentation.TripForms;
 
 namespace OOP.Presentation
 {
@@ -11,6 +12,7 @@ namespace OOP.Presentation
         private readonly Driver _driver;
         private readonly ITripService _tripService;
         private readonly IUserService _userService;
+        private readonly IRouteService _routeService;
 
         // --- Controls ---
         private Label _lblDriverName = null!;
@@ -23,6 +25,7 @@ namespace OOP.Presentation
         private Button _btnAccept = null!;
         private Button _btnStart = null!;
         private Button _btnComplete = null!;
+        private Button _btnRoute = null!;
         private Button _btnRefresh = null!;
         private Button _btnLogout = null!;
         private Label _lblCurrentTrip = null!;
@@ -32,26 +35,28 @@ namespace OOP.Presentation
         private Trip? _currentTrip;
 
         // --- Constants ---
-        private static readonly Color DarkBg = Color.FromArgb(33, 37, 41);
+        private static readonly Color DarkBg = AppTheme.DarkBg;
         private static readonly Color SideText = Color.White;
-        private static readonly Color Blue = Color.FromArgb(13, 110, 253);
-        private static readonly Color BlueHov = Color.FromArgb(0, 90, 220);
-        private static readonly Color Green = Color.FromArgb(25, 135, 84);
-        private static readonly Color GreenHov = Color.FromArgb(20, 110, 68);
-        private static readonly Color Orange = Color.FromArgb(253, 126, 20);
-        private static readonly Color OrangeHov = Color.FromArgb(210, 100, 10);
-        private static readonly Color Red = Color.FromArgb(220, 53, 69);
-        private static readonly Color RedHov = Color.FromArgb(185, 30, 46);
-        private static readonly Color GrayDark = Color.FromArgb(80, 80, 80);
+        private static readonly Color Blue = AppTheme.Primary;
+        private static readonly Color BlueHov = AppTheme.PrimaryHover;
+        private static readonly Color Green = AppTheme.Success;
+        private static readonly Color GreenHov = AppTheme.SuccessHover;
+        private static readonly Color Orange = AppTheme.Warning;
+        private static readonly Color OrangeHov = AppTheme.WarningHover;
+        private static readonly Color Red = AppTheme.Danger;
+        private static readonly Color RedHov = AppTheme.DangerHover;
+        private static readonly Color GrayDark = AppTheme.TextMuted;
 
         public DriverDashboardForm(
             Driver driver,
             ITripService tripService,
-            IUserService userService)
+            IUserService userService,
+            IRouteService routeService)
         {
             _driver = driver ?? throw new ArgumentNullException(nameof(driver));
             _tripService = tripService ?? throw new ArgumentNullException(nameof(tripService));
             _userService = userService ?? throw new ArgumentNullException(nameof(userService));
+            _routeService = routeService ?? throw new ArgumentNullException(nameof(routeService));
 
             InitForm();
             BuildUI();
@@ -70,7 +75,7 @@ namespace OOP.Presentation
             Size = new Size(1100, 720);
             MinimumSize = new Size(860, 580);
             StartPosition = FormStartPosition.CenterScreen;
-            BackColor = Color.FromArgb(245, 247, 250);
+            BackColor = AppTheme.PageBg;
             Font = new Font("Segoe UI", 10F);
         }
 
@@ -90,7 +95,7 @@ namespace OOP.Presentation
             {
                 Dock = DockStyle.Top,
                 Height = 140,
-                BackColor = Color.FromArgb(24, 27, 31),
+                BackColor = AppTheme.DarkBg,
                 Padding = new Padding(18, 16, 18, 12)
             };
 
@@ -156,7 +161,7 @@ namespace OOP.Presentation
             {
                 Dock = DockStyle.Top,
                 Height = 50,
-                BackColor = Color.White,
+                BackColor = AppTheme.CardBg,
                 Padding = new Padding(8, 6, 8, 6)
             };
 
@@ -164,6 +169,8 @@ namespace OOP.Presentation
             _btnAccept = MakeActionButton("✅  Nhận cuốc", Green);
             _btnStart = MakeActionButton("🚗  Bắt đầu", Orange);
             _btnComplete = MakeActionButton("🏁  Hoàn thành", Color.FromArgb(102, 16, 242));
+            _btnComplete.BackColor = AppTheme.Accent;
+            _btnRoute = MakeActionButton("🗺  Lộ trình", AppTheme.Primary);
 
             HoverEffect(_btnRefresh, Blue, BlueHov);
             HoverEffect(_btnAccept, Green, GreenHov);
@@ -173,12 +180,13 @@ namespace OOP.Presentation
             _btnAccept.Click += async (s, e) => await OnAcceptTripClicked();
             _btnStart.Click += async (s, e) => await OnStartTripClicked();
             _btnComplete.Click += async (s, e) => await OnCompleteTripClicked();
+            _btnRoute.Click += (s, e) => OnViewRouteClicked();
 
             // Chỉ hiện nút phù hợp với trạng thái
             UpdateTripButtons();
 
             toolbar.Controls.AddRange(new Control[]
-                { _btnRefresh, _btnAccept, _btnStart, _btnComplete });
+                { _btnRefresh, _btnAccept, _btnStart, _btnComplete, _btnRoute });
 
             // Trip grid
             _dgvTrips = new DataGridView
@@ -187,7 +195,7 @@ namespace OOP.Presentation
                 ReadOnly = true,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
                 RowHeadersVisible = false,
-                BackgroundColor = Color.White,
+                BackgroundColor = AppTheme.CardBg,
                 BorderStyle = BorderStyle.None,
                 SelectionMode = DataGridViewSelectionMode.FullRowSelect,
                 AllowUserToAddRows = false,
@@ -212,7 +220,7 @@ namespace OOP.Presentation
             {
                 Dock = DockStyle.Bottom,
                 Height = 80,
-                BackColor = Color.FromArgb(230, 245, 255),
+                BackColor = AppTheme.Highlight,
                 Padding = new Padding(12, 8, 12, 8),
                 Visible = false
             };
@@ -410,9 +418,7 @@ namespace OOP.Presentation
 
             try
             {
-                // Lấy toàn bộ trip history của driver + trip đang Requested chưa có driver
-                // Note: ITripService chưa có GetAvailableTrips() — dùng GetTripHistory
-                // và filter Requested + chưa có DriverId, đúng loại xe
+                var availableTrips = await _tripService.GetAvailableTripsForDriver(_driver.Id);
                 var allDriverTrips = await _tripService.GetTripHistory(_driver.Id);
 
                 _dgvTrips.Rows.Clear();
@@ -431,6 +437,10 @@ namespace OOP.Presentation
 
                 foreach (var t in myActiveTrips)
                     AddTripRow(t, isCurrentTrip: true);
+
+                // Requested trips phù hợp loại xe để driver nhận
+                foreach (var t in availableTrips)
+                    AddTripRow(t, isCurrentTrip: false);
 
                 UpdateCurrentTripPanel();
                 UpdateTripButtons();
@@ -503,6 +513,9 @@ namespace OOP.Presentation
         // Ẩn/hiện nút theo trạng thái
         private void UpdateTripButtons()
         {
+            if (_dgvTrips == null || _btnAccept == null || _btnStart == null || _btnComplete == null || _btnRoute == null)
+                return;
+
             bool hasSelection = _dgvTrips.CurrentRow != null;
             var tripStatus = _currentTrip?.Status;
 
@@ -517,12 +530,31 @@ namespace OOP.Presentation
 
             // Complete: đang Ongoing
             _btnComplete.Visible = tripStatus == TripStatus.Ongoing;
+            _btnRoute.Visible = _currentTrip != null;
 
             // Đổi text của Start theo trạng thái
             if (_btnStart.Visible)
                 _btnStart.Text = tripStatus == TripStatus.Matched
                     ? "📍  Đã đến nơi đón"
                     : "🚗  Bắt đầu chuyến";
+        }
+
+        private void OnViewRouteClicked()
+        {
+            if (_currentTrip == null)
+            {
+                MessageBox.Show("Chưa có chuyến hiện tại.", "Thông báo",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using var form = new DriverTripForm(
+                _currentTrip.Id,
+                _driver.Id,
+                _tripService,
+                _routeService);
+            form.StartPosition = FormStartPosition.CenterParent;
+            form.ShowDialog(this);
         }
 
         // Persist trạng thái driver qua UserService (để lưu vào storage)
@@ -653,3 +685,8 @@ namespace OOP.Presentation
             MessageBox.Show(message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
     }
 }
+
+
+
+
+

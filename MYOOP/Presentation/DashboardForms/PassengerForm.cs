@@ -1,4 +1,4 @@
-﻿using GMap.NET;
+﻿﻿using GMap.NET;
 using OOP.Application.Services;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
@@ -23,6 +23,7 @@ namespace OOP.Presentation
 
         private Label _lblWelcome = null!;
         private Label _lblStats = null!;
+        private const int HeaderHeight = 110;
 
         // ── Trip status strip (visible only when a trip is active) ────────────
         private Panel _pnlTripStatus = null!;
@@ -220,7 +221,7 @@ namespace OOP.Presentation
             var header = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 110,
+                Height = HeaderHeight,
                 BackColor = AppTheme.DarkBg,
                 Padding = new Padding(28, 18, 28, 12)
             };
@@ -262,8 +263,8 @@ namespace OOP.Presentation
             };
 
             card.Paint += FormHelper.RoundedBorderPainter(AppTheme.CardRadius);
-            Resize += (_, _) => FormHelper.CenterInParent(card, this, topOffset: 120);
-            FormHelper.CenterInParent(card, this, topOffset: 120);
+            Resize += (_, _) => LayoutMenuCard(card);
+            LayoutMenuCard(card);
 
             int y = 24;
 
@@ -312,6 +313,15 @@ namespace OOP.Presentation
             };
 
             Controls.Add(card);
+        }
+
+        private void LayoutMenuCard(Control card)
+        {
+            int bottomReserve = _lstLog.Height + _pnlTripStatus.Height + 16;
+            int available = ClientSize.Height - HeaderHeight - bottomReserve;
+            int y = HeaderHeight + Math.Max(16, (available - card.Height) / 2);
+            int x = (ClientSize.Width - card.Width) / 2;
+            card.Location = new Point(x, y);
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────
@@ -410,3 +420,4 @@ namespace OOP.Presentation
         }
     }
 }
+

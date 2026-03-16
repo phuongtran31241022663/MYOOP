@@ -1,4 +1,5 @@
 ﻿using OOP.Application.Services.Interfaces;
+using OOP.Presentation;
 
 namespace OOP.Presentation.TripForms
 {
@@ -26,27 +27,23 @@ namespace OOP.Presentation.TripForms
             Text = "Lịch sử chuyến đi";
             Size = new Size(1000, 600);
             StartPosition = FormStartPosition.CenterScreen;
+            BackColor = AppTheme.PageBg;
+            Font = new Font("Segoe UI", 10F);
         }
 
         private void BuildUI()
         {
-            // FIX: pre-define columns with AutoGenerateColumns = false.
-            //      The old code used DataSource = anonymousType.ToList() which
-            //      auto-generates columns. On the first load that works, but calling
-            //      LoadTrips() again (Làm mới button) re-assigns DataSource and
-            //      WinForms adds a second set of columns on top of the first,
-            //      duplicating every column header after each refresh.
             _dgvTrips = new DataGridView
             {
                 Dock = DockStyle.Fill,
                 ReadOnly = true,
-                AutoGenerateColumns = false,   // FIX: take manual control of columns
+                AutoGenerateColumns = false,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
                 SelectionMode = DataGridViewSelectionMode.FullRowSelect,
                 RowHeadersVisible = false,
                 AllowUserToAddRows = false,
                 AllowUserToDeleteRows = false,
-                BackgroundColor = Color.White,
+                BackgroundColor = AppTheme.CardBg,
                 BorderStyle = BorderStyle.None,
                 ColumnHeadersHeight = 36,
                 RowTemplate = { Height = 28 },
@@ -73,8 +70,10 @@ namespace OOP.Presentation.TripForms
                 Visible = false
             };
 
-            ButtonRefresh = new Button { Text = "🔄  Làm mới", Width = 120, Height = 40 };
-            ButtonBack = new Button { Text = "← Quay lại", Width = 120, Height = 40 };
+            ButtonRefresh = FormHelper.MakeButton("🔄  Làm mới", AppTheme.Primary, AppTheme.PrimaryHover, height: 40);
+            ButtonBack = FormHelper.MakeOutlineButton("← Quay lại", height: 40);
+            ButtonRefresh.Width = 140;
+            ButtonBack.Width = 140;
 
             ButtonRefresh.Click += async (_, _) => await LoadTrips();
             ButtonBack.Click += (_, _) => Close();
@@ -88,9 +87,27 @@ namespace OOP.Presentation.TripForms
             panel.Controls.Add(ButtonRefresh);
             panel.Controls.Add(ButtonBack);
 
+            var header = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 60,
+                BackColor = AppTheme.CardBg,
+                Padding = new Padding(16, 12, 16, 0)
+            };
+            var lblHeader = new Label
+            {
+                Text = "Lịch sử chuyến đi",
+                Dock = DockStyle.Fill,
+                Font = new Font("Segoe UI", 12.5f, FontStyle.Bold),
+                ForeColor = AppTheme.TextPrimary,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            header.Controls.Add(lblHeader);
+
             Controls.Add(LabelEmpty);
             Controls.Add(_dgvTrips);
             Controls.Add(panel);
+            Controls.Add(header);
         }
 
         private async Task LoadTrips()
@@ -110,8 +127,6 @@ namespace OOP.Presentation.TripForms
                 LabelEmpty.Visible = false;
                 _dgvTrips.Visible = true;
 
-                // FIX: clear rows then add manually — keeps the pre-defined
-                //      column schema intact across multiple refreshes.
                 _dgvTrips.Rows.Clear();
                 foreach (var t in trips)
                 {
@@ -125,7 +140,6 @@ namespace OOP.Presentation.TripForms
                         t.RequestedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
                     );
 
-                    // Colour-code completed vs cancelled rows
                     var row = _dgvTrips.Rows[_dgvTrips.Rows.Count - 1];
                     row.DefaultCellStyle.ForeColor = t.Status switch
                     {
@@ -145,5 +159,26 @@ namespace OOP.Presentation.TripForms
                 ButtonRefresh.Enabled = true;
             }
         }
+
+        private static DataGridViewTextBoxColumn MakeCol(string name, string header, int width) =>
+            new DataGridViewTextBoxColumn
+            {
+                Name = name,
+                HeaderText = header,
+                Width = width,
+                SortMode = DataGridViewColumnSortMode.Automatic,
+                DefaultCellStyle = new DataGridViewCellStyle { Padding = new Padding(4, 0, 4, 0) }
+            };
+
+        private static string StatusLabel(OOP.Domain.Enums.TripStatus status) => status switch
+        {
+            OOP.Domain.Enums.TripStatus.Requested => "⏳ Đang tìm",
+            OOP.Domain.Enums.TripStatus.Matched => "🤝 Đã ghép",
+            OOP.Domain.Enums.TripStatus.Arrived => "📍 Đã đến",
+            OOP.Domain.Enums.TripStatus.Ongoing => "🚗 Đang chạy",
+            OOP.Domain.Enums.TripStatus.Completed => "✅ Hoàn thành",
+            OOP.Domain.Enums.TripStatus.Cancelled => "❌ Đã hủy",
+            _ => status.ToString()
+        };
     }
 }

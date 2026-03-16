@@ -1,4 +1,4 @@
-﻿// ─── EditFareRuleForm (dialog nội tuyến) ──────────────────────────────────────
+﻿﻿// ─── EditFareRuleForm (dialog nội tuyến) ──────────────────────────────────────
 // Drop this class into AdminForm.cs, replacing the existing EditFareRuleForm.
 
 using OOP.Domain.Entities;

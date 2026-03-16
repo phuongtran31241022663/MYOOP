@@ -1,4 +1,4 @@
-﻿using OOP.Application.Interfaces;
+﻿﻿using OOP.Application.Interfaces;
 using OOP.Application.Services.Interfaces;
 using OOP.Application.Validators;
 using OOP.Domain.Entities;
@@ -18,13 +18,13 @@ namespace OOP.Presentation
         private DataGridView _dgvFareRules = null!;
 
         // --- Constants ---
-        private static readonly Color Blue = Color.FromArgb(0, 122, 255);
-        private static readonly Color BlueHover = Color.FromArgb(0, 100, 220);
-        private static readonly Color Red = Color.FromArgb(200, 50, 50);
-        private static readonly Color RedHover = Color.FromArgb(170, 30, 30);
-        private static readonly Color Green = Color.FromArgb(0, 150, 80);
-        private static readonly Color Orange = Color.FromArgb(200, 100, 0);
-        private static readonly Color BgPage = Color.FromArgb(245, 247, 250);
+        private static readonly Color Blue = AppTheme.Primary;
+        private static readonly Color BlueHover = AppTheme.PrimaryHover;
+        private static readonly Color Red = AppTheme.Danger;
+        private static readonly Color RedHover = AppTheme.DangerHover;
+        private static readonly Color Green = AppTheme.Success;
+        private static readonly Color Orange = AppTheme.Warning;
+        private static readonly Color BgPage = AppTheme.PageBg;
 
         public AdminDashboardForm(Admin admin, IAdminService adminService)
         {
@@ -77,7 +77,7 @@ namespace OOP.Presentation
                 Dock = DockStyle.Right,
                 Width = 110,
                 FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(200, 50, 50),
+                BackColor = Red,
                 ForeColor = Color.White,
                 Cursor = Cursors.Hand,
                 Font = new Font("Segoe UI", 9, FontStyle.Bold)
@@ -310,7 +310,6 @@ namespace OOP.Presentation
                 MakeCol("VehicleType", "Loại xe", 100),
                 MakeCol("BaseFare", "Giá mở cửa", 120),
                 MakeCol("PricePerKm", "Giá / km", 120),
-                MakeCol("PricePerMinute", "Giá / phút", 120),
                 MakeCol("MinimumFare", "Giá tối thiểu", 130),
                 MakeCol("CommissionRate", "Hoa hồng (%)", 110),
                 MakeCol("UpdatedAt", "Cập nhật lúc", 140)
@@ -419,7 +418,7 @@ namespace OOP.Presentation
             {
                 Dock = DockStyle.Top,
                 Height = 48,
-                BackColor = Color.White,
+                BackColor = AppTheme.CardBg,
                 Padding = new Padding(8, 6, 8, 6)
             };
         }
@@ -451,7 +450,7 @@ namespace OOP.Presentation
                 ReadOnly = true,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
                 RowHeadersVisible = false,
-                BackgroundColor = Color.White,
+                BackgroundColor = AppTheme.CardBg,
                 BorderStyle = BorderStyle.None,
                 SelectionMode = DataGridViewSelectionMode.FullRowSelect,
                 AllowUserToAddRows = false,
@@ -499,13 +498,11 @@ namespace OOP.Presentation
         // Kết quả sau khi nhấn OK — AdminDashboardForm đọc từ đây
         public decimal NewBaseFare { get; private set; }
         public decimal NewPricePerKm { get; private set; }
-        public decimal NewPricePerMinute { get; private set; }
         public decimal NewMinimumFare { get; private set; }
         public decimal NewCommissionRate { get; private set; }  // 0..1
 
         private NumericUpDown _numBaseFare = null!;
         private NumericUpDown _numPricePerKm = null!;
-        private NumericUpDown _numPricePerMinute = null!;
         private NumericUpDown _numMinimumFare = null!;
         private NumericUpDown _numCommission = null!;  // hiển thị 0..100, lưu /100
 
@@ -532,13 +529,13 @@ namespace OOP.Presentation
             var layout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                RowCount = 7,
+                RowCount = 6,
                 ColumnCount = 2,
                 Padding = new Padding(24, 20, 24, 12)
             };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46));
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54));
-            for (int i = 0; i < 7; i++)
+            for (int i = 0; i < 6; i++)
                 layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
 
             // Row 0 — header label
@@ -553,14 +550,14 @@ namespace OOP.Presentation
             layout.Controls.Add(lblHeader, 0, 0);
             layout.SetColumnSpan(lblHeader, 2);
 
-            // Row 1..5 — input fields
+            // Row 1..4 — input fields
             _numBaseFare = AddNumRow(layout, "Giá mở cửa (đ):", 1, rule.BaseFare, 0, 500_000);
             _numPricePerKm = AddNumRow(layout, "Giá / km (đ):", 2, rule.PricePerKm, 0, 100_000);
-            _numMinimumFare = AddNumRow(layout, "Giá tối thiểu (đ):", 4, rule.MinimumFare, 0, 500_000);
-            _numCommission = AddNumRow(layout, "Hoa hồng (%):", 5, rule.CommissionRate * 100, 0, 100,
+            _numMinimumFare = AddNumRow(layout, "Giá tối thiểu (đ):", 3, rule.MinimumFare, 0, 500_000);
+            _numCommission = AddNumRow(layout, "Hoa hồng (%):", 4, rule.CommissionRate * 100, 0, 100,
                                            decimalPlaces: 0);
 
-            // Row 6 — buttons
+            // Row 5 — buttons
             var btnPanel = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -597,7 +594,7 @@ namespace OOP.Presentation
             btnPanel.Controls.Add(btnCancel);
             btnPanel.Controls.Add(btnSave);
 
-            layout.Controls.Add(btnPanel, 0, 6);
+            layout.Controls.Add(btnPanel, 0, 5);
             layout.SetColumnSpan(btnPanel, 2);
 
             Controls.Add(layout);
@@ -610,7 +607,6 @@ namespace OOP.Presentation
             // Đọc giá trị và validate sơ bộ trước khi đóng
             decimal baseFare = _numBaseFare.Value;
             decimal perKm = _numPricePerKm.Value;
-            decimal perMin = _numPricePerMinute.Value;
             decimal minFare = _numMinimumFare.Value;
             decimal commission = _numCommission.Value / 100m;  // % → 0..1
 
@@ -625,7 +621,6 @@ namespace OOP.Presentation
             // Gán kết quả — AdminDashboardForm sẽ đọc
             NewBaseFare = baseFare;
             NewPricePerKm = perKm;
-            NewPricePerMinute = perMin;
             NewMinimumFare = minFare;
             NewCommissionRate = commission;
 
@@ -667,3 +662,5 @@ namespace OOP.Presentation
         }
     }
 }
+
+

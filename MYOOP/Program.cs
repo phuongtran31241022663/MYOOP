@@ -1,4 +1,4 @@
-﻿using OOP.Application.Services;
+﻿﻿using OOP.Application.Services;
 using OOP.Infrastructure.Map;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
@@ -71,100 +71,198 @@ namespace OOP
             var matchingService = new DriverMatchingService(userRepo, routeService);
             var adminService = new AdminService(userRepo, tripRepo, fareRepo);
             var ratingService = new RatingService(ratingRepo, userRepo, tripRepo);
+            ITripService tripService = new TripService(
+              tripRepo,
+              userRepo,
+              fareRepo,
+              fareRuleService,
+              paymentService,
+              matchingService,
+              notificationService,
+              routeService
+          );
+            var simulationService = new SimulationService(userRepo, tripRepo, notificationService, tripService, routeService);
 
             using var httpClient = new HttpClient();
             httpClient.DefaultRequestHeaders.Add("User-Agent", "RideGo-App/1.0");
 
-            ITripService tripService = new TripService(
-                tripRepo,
-                userRepo,
-                fareRepo,
-                fareRuleService,
-                paymentService,
-                matchingService,
-                notificationService,
-                routeService
-            );
+            // ── Seed data (sync before UI starts) ─────────────────────────────
+            SeedData(authService, tripRepo, userRepo, fareRepo).GetAwaiter().GetResult();
 
-            // 4. Seed Data (Chạy đồng bộ)
-            SeedData(authService, tripRepo, userRepo).GetAwaiter().GetResult();
-
-            // 5. Định nghĩa các Factories cho UI
+            // ── UI factories ──────────────────────────────────────────────────
             Func<Passenger, ITripService, Form> requestTripFactory = (p, s) =>
-     new RequestTripForm(p.Id, s, routeService, fareRuleService, httpClient);
+                new RequestTripForm(p.Id, s, routeService, fareRuleService, httpClient);
 
             Func<Passenger, ITripService, Form> tripHistoryFactory = (p, s) =>
                 new TripHistoryForm(p.Id, s);
 
             Func<Passenger, IRatingService, ITripService, Form> ratingFormFactory = (p, r, s) =>
-     new RatingForm(p, r, s);
+                new RatingForm(p, r, s);
 
-            // Factory cho Dashboard Người dùng
             Func<Passenger, Form> passengerDashboardFactory = p =>
-     new PassengerDashboardForm(
-         p,
-         tripService,
-         ratingService,
-         requestTripFactory,
-         tripHistoryFactory,
-         ratingFormFactory
-     );
+                new PassengerDashboardForm(
+                    p,
+                    userRepo,
+                    tripService,
+                    ratingService,
+                    notificationService,
+                    requestTripFactory,
+                    tripHistoryFactory,
+                    ratingFormFactory
+                );
 
-            // Factory cho Dashboard Tài xế
             Func<Driver, Form> driverDashboardFactory = d =>
-                new DriverDashboardForm(d, tripService, userService);
+                new DriverDashboardForm(d, tripService, userService, routeService);
 
-            // Factory cho Dashboard Admin
             Func<Admin, Form> adminDashboardFactory = a =>
                 new AdminDashboardForm(a, adminService);
 
-            // Factory tạo LoginForm
             Func<LoginForm> loginFormFactory = () => new LoginForm(
                 authService,
                 passengerDashboardFactory,
                 driverDashboardFactory,
                 adminDashboardFactory);
 
-            // Factory tạo RegisterForm
             Func<RegisterForm> registerFormFactory = () => new RegisterForm(authService);
 
-            // 6. Chạy ứng dụng từ MainForm
-            System.Windows.Forms.Application.Run(new MainForm(loginFormFactory, registerFormFactory));
+            var simulationTimer = new System.Windows.Forms.Timer { Interval = 2000 };
+            simulationTimer.Tick += async (_, _) =>
+            {
+                try
+                {
+                    await simulationService.UpdateDriverLocations();
+                    var trips = await tripRepo.GetAll();
+                    var active = trips
+                        .Where(t => t.DriverId.HasValue &&
+                                    (t.Status == TripStatus.Matched ||
+                                     t.Status == TripStatus.Arrived ||
+                                     t.Status == TripStatus.Ongoing))
+                        .ToList();
+                    foreach (var t in active)
+                        await simulationService.SimulateTripProgress(t.Id);
+                }
+                catch { }
+            };
+            simulationTimer.Start();
+
+            System.Windows.Forms.Application.Run(
+                new MainForm(
+                    loginFormFactory,
+                    registerFormFactory,
+                    authService,
+                    passengerDashboardFactory,
+                    driverDashboardFactory));
         }
 
-        private static async Task SeedData(AuthService authService, ITripRepository tripRepo, IUserRepository userRepo)
+        private static async Task SeedData(
+            AuthService authService,
+            ITripRepository tripRepo,
+            IUserRepository userRepo,
+            IFareRuleRepository fareRepo)
         {
-            // 1. ADMIN
-            string adminPhone = "0000000000";
+            // ── Admin ─────────────────────────────────────────────────────────
+            const string adminPhone = "0000000000";
             if (!await userRepo.ExistsByPhone(adminPhone))
             {
-                var admin = new Admin(Guid.NewGuid(), "Hệ Thống Admin", adminPhone,
-                                      AuthService.HashPassword("admin123"), true);
+                var admin = new Admin(
+                    Guid.NewGuid(), "Hệ Thống Admin", adminPhone,
+                    AuthService.HashPassword("admin123"), true);
                 await userRepo.Add(admin);
             }
 
-            // 2. CHỈ SEED DỮ LIỆU MẪU NẾU REPO TRỐNG
-            var allUsers = await userRepo.GetAll();
-            // Nếu chỉ có mỗi Admin (count == 1) thì mới tạo thêm data mẫu
-            if (allUsers.Count() <= 1)
-            {
-                var hcm = new DomainLocation("Default", "TP.HCM", 10.762622, 106.660172);
-                var q1 = new DomainLocation("Quận 1", "Bến Thành", 10.772, 106.698);
-                var q5 = new DomainLocation("Quận 5", "Chợ Lớn", 10.754, 106.664);
+            var hcm = new DomainLocation("Trung tâm", "TP. Hồ Chí Minh", 10.7769, 106.7009);
+            var q1 = new DomainLocation("Quận 1", "Bến Thành", 10.7720, 106.6980);
+            var q3 = new DomainLocation("Quận 3", "Võ Thị Sáu", 10.7846, 106.6844);
+            var q5 = new DomainLocation("Quận 5", "Chợ Lớn", 10.7540, 106.6640);
+            var q7 = new DomainLocation("Quận 7", "Phú Mỹ Hưng", 10.7287, 106.7219);
+            var tanBinh = new DomainLocation("Tân Bình", "Sân bay Tân Sơn Nhất", 10.8132, 106.6620);
+            var phuNhuan = new DomainLocation("Phú Nhuận", "Ngã 4 Phú Nhuận", 10.7995, 106.6792);
 
-                var bike = new Motorbike(Guid.NewGuid(), "51F-123.45", "Honda", "Vision", "Đỏ");
+            var p1 = await EnsurePassenger(authService, userRepo, "Nguyễn Văn A", "0900000001");
+            var p2 = await EnsurePassenger(authService, userRepo, "Trần Thị B", "0900000002");
+            var p3 = await EnsurePassenger(authService, userRepo, "Phạm Minh C", "0900000004");
 
-                // Đăng ký qua service để tự động băm mật khẩu
-                var p1 = await authService.RegisterPassenger("Nguyễn Văn A", "0900000001", "123456");
-                var d1 = await authService.RegisterDriver("Lê Tài Xế", "0900000003", "123456", bike, hcm, "A1-12345");
+            var d1 = await EnsureDriver(
+                authService, userRepo,
+                "Lê Tài Xế", "0900000003", hcm,
+                new Motorbike(Guid.NewGuid(), "59X1-12345", "Honda", "Vision", "Đỏ"),
+                "A1-12345");
 
-                // Tạo Trip mẫu cho có dữ liệu hiển thị Chart/History
-                var trip1 = new Trip(Guid.NewGuid(), p1.Id, q1, q5, VehicleType.Motorbike, 3.5);
-                trip1.AssignDriver(d1.Id);
-                trip1.MarkArrived();
-                trip1.CompleteTrip(3.5, 12, 15000m);
-                await tripRepo.Add(trip1);
-            }
+            var d2 = await EnsureDriver(
+                authService, userRepo,
+                "Ngô Tài Xế", "0900000005", q7,
+                new Car(Guid.NewGuid(), "51H-78901", "Toyota", "Vios", "Trắng", 4),
+                "B2-54321");
+
+            var d3 = await EnsureDriver(
+                authService, userRepo,
+                "Hoàng Tài Xế", "0900000006", tanBinh,
+                new Motorbike(Guid.NewGuid(), "59Y2-67890", "Yamaha", "Sirius", "Đen"),
+                "A1-67890");
+
+            var existingTrips = await tripRepo.GetAll();
+            if (existingTrips.Count > 0) return;
+
+            var motorRule = await fareRepo.GetByVehicleType(VehicleType.Motorbike)
+                ?? throw new InvalidOperationException("Không tìm thấy cấu hình giá xe máy.");
+            var carRule = await fareRepo.GetByVehicleType(VehicleType.Car)
+                ?? throw new InvalidOperationException("Không tìm thấy cấu hình giá ô tô.");
+
+            var t1 = new Trip(p1.Id, motorRule.Id, q1, q5, VehicleType.Motorbike, 3.5);
+            t1.AssignDriver(d1.Id);
+            t1.MarkArrived();
+            t1.StartTrip();
+            t1.CompleteTrip(3.5, 12, 15_000m);
+            await tripRepo.Add(t1);
+
+            var t2 = new Trip(p2.Id, carRule.Id, q3, q7, VehicleType.Car, 8.2);
+            t2.AssignDriver(d2.Id);
+            t2.MarkArrived();
+            t2.StartTrip();
+            await tripRepo.Add(t2);
+
+            var t3 = new Trip(p3.Id, motorRule.Id, phuNhuan, tanBinh, VehicleType.Motorbike, 4.1);
+            t3.AssignDriver(d3.Id);
+            await tripRepo.Add(t3);
+
+            var t4 = new Trip(p1.Id, motorRule.Id, q5, q1, VehicleType.Motorbike, 2.2);
+            t4.CancelTrip("Hành khách đổi ý");
+            await tripRepo.Add(t4);
+
+            var t5 = new Trip(p2.Id, carRule.Id, tanBinh, q1, VehicleType.Car, 6.4);
+            await tripRepo.Add(t5);
+        }
+
+        private static async Task<Passenger> EnsurePassenger(
+            AuthService authService,
+            IUserRepository userRepo,
+            string name,
+            string phone)
+        {
+            var existing = await userRepo.GetByPhone(phone);
+            if (existing is Passenger p) return p;
+            if (existing != null) throw new InvalidOperationException($"Số điện thoại '{phone}' đã dùng cho role khác.");
+            return await authService.RegisterPassenger(name, phone, "123456");
+        }
+
+        private static async Task<Driver> EnsureDriver(
+            AuthService authService,
+            IUserRepository userRepo,
+            string name,
+            string phone,
+            DomainLocation location,
+            Vehicle vehicle,
+            string license)
+        {
+            var existing = await userRepo.GetByPhone(phone);
+            if (existing is Driver d) return d;
+            if (existing != null) throw new InvalidOperationException($"Số điện thoại '{phone}' đã dùng cho role khác.");
+            return await authService.RegisterDriver(name, phone, "123456", vehicle, location, license);
         }
     }
 }
+
+
+
+
+

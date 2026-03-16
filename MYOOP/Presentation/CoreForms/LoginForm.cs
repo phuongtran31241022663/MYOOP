@@ -1,4 +1,4 @@
-using OOP.Application.Services.Interfaces;
+﻿using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
 
 namespace OOP.Presentation
@@ -19,9 +19,6 @@ namespace OOP.Presentation
         private ErrorProvider _errorProvider = null!;
 
         private const int CardWidth = 380;
-        private static readonly Color Blue = Color.FromArgb(0, 122, 255);
-        private static readonly Color BlueHover = Color.FromArgb(0, 100, 220);
-        private static readonly Color Gray = Color.FromArgb(200, 200, 200);
 
         public LoginForm(
             IAuthService authService,
@@ -42,10 +39,10 @@ namespace OOP.Presentation
         {
             Text = "RideGo - Đăng nhập";
             StartPosition = FormStartPosition.CenterScreen;
-            Size = new Size(1000, 700);
-            MinimumSize = new Size(700, 550);
-            BackColor = Color.White;
-            Font = new Font("Segoe UI", 10);
+            Size = new Size(980, 650);
+            MinimumSize = new Size(760, 560);
+            BackColor = AppTheme.CardBg;
+            Font = new Font("Segoe UI", 10.5f);
             _errorProvider = new ErrorProvider
             {
                 ContainerControl = this,
@@ -55,34 +52,52 @@ namespace OOP.Presentation
 
         private void BuildUI()
         {
-            var card = new Panel { BackColor = Color.White, Width = CardWidth, Height = 460 };
+            var card = new Panel
+            {
+                Width = CardWidth,
+                Height = 460,
+                BackColor = AppTheme.CardBg
+            };
             CenterCard(card);
             Resize += (s, e) => CenterCard(card);
 
-            int y = 0;
+            int y = 20;
             var lblLogo = new Label
             {
                 Text = "🚗",
-                Font = new Font("Segoe UI", 38),
+                Font = new Font("Segoe UI", 34),
                 TextAlign = ContentAlignment.MiddleCenter,
                 Left = 0,
                 Top = y,
                 Width = CardWidth,
-                Height = 60
+                Height = 52
             };
-            y += 65;
+            y += 58;
 
             var title = new Label
             {
                 Text = "Đăng nhập",
-                Font = new Font("Segoe UI", 22, FontStyle.Bold),
+                Font = new Font("Segoe UI", 18, FontStyle.Bold),
                 TextAlign = ContentAlignment.MiddleCenter,
                 Left = 0,
                 Top = y,
                 Width = CardWidth,
-                Height = 44
+                Height = 32
             };
-            y += 54;
+            y += 40;
+
+            var subtitle = new Label
+            {
+                Text = "Tiếp tục sử dụng hệ thống RideGo",
+                Font = new Font("Segoe UI", 9.5f),
+                ForeColor = AppTheme.TextMuted,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Left = 0,
+                Top = y,
+                Width = CardWidth,
+                Height = 20
+            };
+            y += 30;
 
             var lblPhone = new Label
             {
@@ -91,21 +106,17 @@ namespace OOP.Presentation
                 Left = 0,
                 Top = y,
                 Width = CardWidth,
-                Height = 22
+                Height = 20
             };
-            y += 26;
+            y += 24;
 
-            _txtPhone = new TextBox
-            {
-                PlaceholderText = "Nhập số điện thoại",
-                Left = 0,
-                Top = y,
-                Width = CardWidth,
-                Height = 28,
-                BorderStyle = BorderStyle.FixedSingle
-            };
+            _txtPhone = FormHelper.MakeInput("Nhập số điện thoại");
+            _txtPhone.Left = 0;
+            _txtPhone.Top = y;
+            _txtPhone.Width = CardWidth;
+            _txtPhone.Height = AppTheme.InputHeight;
             _txtPhone.TextChanged += OnInputChanged;
-            y += 38;
+            y += 40;
 
             var lblPass = new Label
             {
@@ -114,98 +125,76 @@ namespace OOP.Presentation
                 Left = 0,
                 Top = y,
                 Width = CardWidth,
-                Height = 22
+                Height = 20
             };
-            y += 26;
+            y += 24;
 
-            var passRow = new Panel { Left = 0, Top = y, Width = CardWidth, Height = 28 };
+            var passRow = new Panel { Left = 0, Top = y, Width = CardWidth, Height = AppTheme.InputHeight };
 
-            _txtPassword = new TextBox
-            {
-                PlaceholderText = "Nhập mật khẩu",
-                UseSystemPasswordChar = true,
-                Left = 0,
-                Top = 0,
-                Width = CardWidth - 32,
-                Height = 28,
-                BorderStyle = BorderStyle.FixedSingle
-            };
+            _txtPassword = FormHelper.MakeInput("Nhập mật khẩu", isPassword: true);
+            _txtPassword.Left = 0;
+            _txtPassword.Top = 0;
+            _txtPassword.Width = CardWidth - 38;
+            _txtPassword.Height = AppTheme.InputHeight;
             _txtPassword.TextChanged += OnInputChanged;
 
             _btnTogglePassword = new Button
             {
                 Text = "👁",
-                Left = CardWidth - 30,
-                Top = -1,
-                Width = 30,
-                Height = 27,
+                Left = CardWidth - 36,
+                Top = 1,
+                Width = 36,
+                Height = AppTheme.InputHeight - 2,
                 FlatStyle = FlatStyle.Flat,
                 BackColor = Color.White,
                 Cursor = Cursors.Hand,
                 TabStop = false
             };
             _btnTogglePassword.FlatAppearance.BorderSize = 1;
-            _btnTogglePassword.FlatAppearance.BorderColor = Color.LightGray;
+            _btnTogglePassword.FlatAppearance.BorderColor = AppTheme.BorderLight;
             _btnTogglePassword.Click += (s, e) =>
                 FormHelper.TogglePasswordVisibility(_txtPassword, _btnTogglePassword);
 
             passRow.Controls.Add(_txtPassword);
             passRow.Controls.Add(_btnTogglePassword);
-            y += 38;
+            y += 44;
 
             _lblError = new Label
             {
                 Text = "",
-                ForeColor = Color.Red,
+                ForeColor = AppTheme.Danger,
                 Font = new Font("Segoe UI", 9),
                 Left = 0,
                 Top = y,
                 Width = CardWidth,
-                Height = 22,
+                Height = 20,
                 TextAlign = ContentAlignment.MiddleLeft
             };
-            y += 32;
+            y += 30;
 
-            _btnLogin = new Button
-            {
-                Text = "Đăng nhập",
-                Left = 0,
-                Top = y,
-                Width = CardWidth,
-                Height = 44,
-                BackColor = Gray,
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Enabled = false,
-                Cursor = Cursors.Hand,
-                Font = new Font("Segoe UI", 11, FontStyle.Bold)
-            };
-            _btnLogin.FlatAppearance.BorderSize = 0;
-            FormHelper.AttachHover(_btnLogin, Blue, BlueHover);
+            _btnLogin = FormHelper.MakeButton("Đăng nhập", AppTheme.Primary, AppTheme.PrimaryHover);
+            _btnLogin.Left = 0;
+            _btnLogin.Top = y;
+            _btnLogin.Width = CardWidth;
+            _btnLogin.Enabled = false;
+            _btnLogin.BackColor = AppTheme.Disabled;
             _btnLogin.Click += OnLoginClicked;
-            y += 54;
+            y += 56;
 
-            _btnBack = new Button
-            {
-                Text = "Quay lại",
-                Left = 0,
-                Top = y,
-                Width = CardWidth,
-                Height = 36,
-                BackColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Cursor = Cursors.Hand
-            };
-            _btnBack.FlatAppearance.BorderColor = Color.LightGray;
-            _btnBack.FlatAppearance.BorderSize = 1;
+            _btnBack = FormHelper.MakeOutlineButton("Quay lại");
+            _btnBack.Left = 0;
+            _btnBack.Top = y;
+            _btnBack.Width = CardWidth;
             _btnBack.Click += (s, e) => Close();
 
             card.Controls.AddRange(new Control[]
             {
-                lblLogo, title, lblPhone, _txtPhone, lblPass,
+                lblLogo, title, subtitle, lblPhone, _txtPhone, lblPass,
                 passRow, _lblError, _btnLogin, _btnBack
             });
+
             Controls.Add(card);
+
             Shown += (s, e) => _txtPhone.Focus();
             AttachKeyboardShortcuts();
         }
@@ -245,7 +234,7 @@ namespace OOP.Presentation
             _errorProvider.Clear();
             bool ok = _txtPhone.Text.Trim().Length >= 9 && _txtPassword.Text.Length >= 6;
             _btnLogin.Enabled = ok;
-            _btnLogin.BackColor = ok ? Blue : Gray;
+            _btnLogin.BackColor = ok ? AppTheme.Primary : AppTheme.Disabled;
             _btnLogin.Cursor = ok ? Cursors.Hand : Cursors.Default;
         }
 
@@ -329,7 +318,7 @@ namespace OOP.Presentation
         private void CenterCard(Control card) =>
             card.Location = new Point(
                 (ClientSize.Width - card.Width) / 2,
-                (ClientSize.Height - card.Height) / 2);
+                140 + (ClientSize.Height - 140 - card.Height) / 2);
 
         protected override void Dispose(bool disposing)
         {
@@ -338,3 +327,5 @@ namespace OOP.Presentation
         }
     }
 }
+
+

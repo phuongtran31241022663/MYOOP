@@ -1,4 +1,4 @@
-﻿using GMap.NET;
+﻿﻿using GMap.NET;
 using GMap.NET.MapProviders;
 using GMap.NET.WindowsForms;
 using GMap.NET.WindowsForms.Markers;
@@ -65,6 +65,12 @@ namespace OOP.Presentation.Map
 
         // ── Events ────────────────────────────────────────────────────────────
         public event Action<PointLatLng, string, bool>? LocationSelected;
+        private Func<bool>? _isPickupSelector;
+
+        public void SetPickupSelector(Func<bool> selector)
+        {
+            _isPickupSelector = selector;
+        }
 
         // ─────────────────────────────────────────────────────────────────────
         // Static init
@@ -239,6 +245,8 @@ namespace OOP.Presentation.Map
             {
                 wasDragging = dragging;
                 dragging = false;
+                if (!wasDragging)
+                    _ = HandleLeftClickAsync(e.X, e.Y);
                 return;
             }
 
@@ -248,13 +256,31 @@ namespace OOP.Presentation.Map
                     _ = HandleRightClickAsync(e.X, e.Y);
             }
         }
+        private async Task HandleLeftClickAsync(int x, int y)
+        {
+            try
+            {
+                PointLatLng point = gmap.FromLocalToLatLng(x, y);
+                string address = await GetAddressFromPoint(point);
+                bool isPickup = _isPickupSelector?.Invoke() ?? (pickupPoint == default(PointLatLng));
+
+                if (isPickup) SetPickupMarker(point);
+                else await SetDropoffMarker(point);
+
+                LocationSelected?.Invoke(point, address, isPickup);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[HandleLeftClickAsync] {ex}");
+            }
+        }
         private async Task HandleRightClickAsync(int x, int y)
         {
             try
             {
                 PointLatLng point = gmap.FromLocalToLatLng(x, y);
                 string address = await GetAddressFromPoint(point);
-                bool isPickup = (pickupPoint == default(PointLatLng));
+                bool isPickup = _isPickupSelector?.Invoke() ?? (pickupPoint == default(PointLatLng));
 
                 if (isPickup) SetPickupMarker(point);
                 else await SetDropoffMarker(point);
@@ -632,3 +658,5 @@ namespace OOP.Presentation.Map
         }
     }
 }
+
+

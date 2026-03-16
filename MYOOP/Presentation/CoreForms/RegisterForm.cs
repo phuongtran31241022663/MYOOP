@@ -1,4 +1,4 @@
-using OOP.Application.Interfaces;
+﻿using OOP.Application.Interfaces;
 using OOP.Application.Services.Interfaces;
 using OOP.Application.Validators;
 using OOP.Domain.Entities;
@@ -44,18 +44,10 @@ namespace OOP.Presentation
         // --- Constants ---
         private const int CardWidth = 360;
         private const int CardPad = 24;
-        private const int InputHeight = 34;
+        private const int InputHeight = 38;
         private const int LabelHeight = 20;
         private const int Gap = 10;
 
-        private static readonly Color Blue = Color.FromArgb(0, 122, 255);
-        private static readonly Color BlueHover = Color.FromArgb(0, 100, 220);
-        private static readonly Color Green = Color.FromArgb(0, 177, 79);
-        private static readonly Color GreenHov = Color.FromArgb(0, 150, 60);
-        private static readonly Color Gray = Color.FromArgb(200, 200, 200);
-        private static readonly Color BgPage = Color.FromArgb(245, 247, 250);
-
-        // Trong Constructor
         public RegisterForm(IAuthService authService)
         {
             _authService = authService ?? throw new ArgumentNullException(nameof(authService));
@@ -66,15 +58,15 @@ namespace OOP.Presentation
             OnRoleChanged();
         }
 
-        // ─── Setup ───────────────────────────────────────────────────────────────
+        // ── Setup ───────────────────────────────────────────────────────────
 
         private void InitForm()
         {
             Text = "RideGo – Đăng ký tài khoản";
             StartPosition = FormStartPosition.CenterScreen;
-            Size = new Size(900, 660);
-            MinimumSize = new Size(700, 560);
-            BackColor = BgPage;
+            Size = new Size(960, 700);
+            MinimumSize = new Size(760, 600);
+            BackColor = AppTheme.PageBg;
             Font = new Font("Segoe UI", 10F);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -88,31 +80,47 @@ namespace OOP.Presentation
 
         private void BuildUI()
         {
-            // ── Tiêu đề ──────────────────────────────────────────────────────────
+            var header = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 110,
+                BackColor = AppTheme.Primary,
+                Padding = new Padding(28, 18, 28, 12)
+            };
+
             var lblTitle = new Label
             {
-                Text = "🚗  Tạo tài khoản",
-                Font = new Font("Segoe UI", 20, FontStyle.Bold),
-                ForeColor = Blue,
-                TextAlign = ContentAlignment.MiddleCenter,
+                Text = "Tạo tài khoản",
                 Dock = DockStyle.Top,
-                Height = 64,
-                BackColor = Color.Transparent
+                Height = 38,
+                Font = new Font("Segoe UI", 18, FontStyle.Bold),
+                ForeColor = Color.White,
+                TextAlign = ContentAlignment.MiddleLeft
             };
-            Controls.Add(lblTitle);
 
-            // ── Card thông tin chung (trái / center khi chỉ có Passenger) ────────
-            _cardCommon = MakeCard(CardWidth, 500);
+            var lblSub = new Label
+            {
+                Text = "Hoàn tất thông tin để bắt đầu sử dụng RideGo",
+                Dock = DockStyle.Top,
+                Height = 22,
+                Font = new Font("Segoe UI", 10f),
+                ForeColor = Color.FromArgb(220, 235, 255),
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
+            header.Controls.Add(lblSub);
+            header.Controls.Add(lblTitle);
+            Controls.Add(header);
+
+            _cardCommon = FormHelper.MakeCard(CardWidth, 520);
             BuildCommonCard(_cardCommon);
 
-            // ── Card thông tin xe (phải, ẩn khi Passenger) ───────────────────────
-            _cardVehicle = MakeCard(CardWidth, 500);
+            _cardVehicle = FormHelper.MakeCard(CardWidth, 520);
             BuildVehicleCard(_cardVehicle);
 
             Controls.Add(_cardCommon);
             Controls.Add(_cardVehicle);
 
-            // Tự căn giữa khi resize
             Resize += (s, e) => LayoutCards();
             Shown += (s, e) =>
             {
@@ -121,13 +129,12 @@ namespace OOP.Presentation
             };
         }
 
-        // ─── Card thông tin chung ────────────────────────────────────────────────
+        // ── Card thông tin chung ───────────────────────────────────────────
 
         private void BuildCommonCard(Panel card)
         {
             int y = CardPad;
 
-            // Radio buttons — chọn vai trò
             var lblRole = MakeLabel("Bạn là:");
             Place(lblRole, card, CardPad, y, CardWidth - CardPad * 2, LabelHeight); y += LabelHeight + 4;
 
@@ -146,13 +153,13 @@ namespace OOP.Presentation
                 Checked = true,
                 Left = 0,
                 Top = 4,
-                Width = 130,
+                Width = 140,
                 Font = new Font("Segoe UI", 10)
             };
             _rdoDriver = new RadioButton
             {
                 Text = "Tài xế",
-                Left = 140,
+                Left = 150,
                 Top = 4,
                 Width = 100,
                 Font = new Font("Segoe UI", 10)
@@ -165,15 +172,12 @@ namespace OOP.Presentation
             card.Controls.Add(radioPanel);
             y += 38;
 
-            // Separator
             var sep = MakeSep(card, y); y += 16;
 
-            // Họ tên
             AddField(card, "Họ và tên", ref y,
                 _txtName = MakeInput("Nhập họ và tên đầy đủ"));
             AttachEnterToNext(_txtName);
 
-            // Số điện thoại
             AddField(card, "Số điện thoại", ref y,
                 _txtPhone = MakeInput("VD: 0901234567"));
             _txtPhone.KeyPress += (s, e) =>
@@ -182,9 +186,7 @@ namespace OOP.Presentation
                     e.Handled = true;
             };
 
-            // Mật khẩu + toggle
             AddLabel(card, "Mật khẩu", ref y);
-
             var passRow = new Panel
             {
                 Left = CardPad,
@@ -215,7 +217,7 @@ namespace OOP.Presentation
                 Font = new Font("Segoe UI", 11)
             };
             _btnTogglePass.FlatAppearance.BorderSize = 1;
-            _btnTogglePass.FlatAppearance.BorderColor = Gray;
+            _btnTogglePass.FlatAppearance.BorderColor = AppTheme.BorderLight;
             _btnTogglePass.Click += (s, e) =>
             {
                 _txtPassword.UseSystemPasswordChar = !_txtPassword.UseSystemPasswordChar;
@@ -230,11 +232,10 @@ namespace OOP.Presentation
             AttachEnterToNext(_txtPhone);
             AttachEnterToNext(_txtPassword);
 
-            // Error label
             _lblError = new Label
             {
                 Text = "",
-                ForeColor = Color.FromArgb(220, 50, 50),
+                ForeColor = AppTheme.Danger,
                 Font = new Font("Segoe UI", 9),
                 BackColor = Color.Transparent,
                 AutoSize = false,
@@ -246,47 +247,24 @@ namespace OOP.Presentation
             card.Controls.Add(_lblError);
             y += 22;
 
-            // Nút Đăng ký
-            _btnRegister = new Button
-            {
-                Text = "Đăng ký",
-                Left = CardPad,
-                Top = y,
-                Width = CardWidth - CardPad * 2,
-                Height = 42,
-                BackColor = Green,
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Cursor = Cursors.Hand,
-                Font = new Font("Segoe UI", 11, FontStyle.Bold)
-            };
-            _btnRegister.FlatAppearance.BorderSize = 0;
+            _btnRegister = FormHelper.MakeButton("Đăng ký", AppTheme.Success, AppTheme.SuccessHover, height: 44);
+            _btnRegister.Left = CardPad;
+            _btnRegister.Top = y;
+            _btnRegister.Width = CardWidth - CardPad * 2;
             _btnRegister.Click += OnRegisterClicked;
-            HoverEffect(_btnRegister, Green, GreenHov);
             card.Controls.Add(_btnRegister);
-            y += 50;
+            y += 52;
 
-            // Nút Quay lại
-            _btnBack = new Button
-            {
-                Text = "← Quay lại",
-                Left = CardPad,
-                Top = y,
-                Width = CardWidth - CardPad * 2,
-                Height = 36,
-                BackColor = Color.White,
-                ForeColor = Color.FromArgb(100, 100, 100),
-                FlatStyle = FlatStyle.Flat,
-                Cursor = Cursors.Hand,
-                Font = new Font("Segoe UI", 10)
-            };
-            _btnBack.FlatAppearance.BorderSize = 1;
-            _btnBack.FlatAppearance.BorderColor = Gray;
+            _btnBack = FormHelper.MakeOutlineButton("← Quay lại");
+            _btnBack.Left = CardPad;
+            _btnBack.Top = y;
+            _btnBack.Width = CardWidth - CardPad * 2;
             _btnBack.Click += OnBackClicked;
             card.Controls.Add(_btnBack);
         }
 
-        // ─── Card thông tin xe ───────────────────────────────────────────────────
+        // ── Card thông tin xe ───────────────────────────────────────────────
+
         private void BuildVehicleCard(Panel card)
         {
             int y = CardPad;
@@ -295,7 +273,6 @@ namespace OOP.Presentation
             Place(lblHeader, card, CardPad, y, CardWidth - CardPad * 2, 22);
             y += 30;
 
-            // 1. Loại xe (Sử dụng ComboBoxItem để giữ Enum)
             AddLabel(card, "Loại xe", ref y);
             _cmbVehicleType = new ComboBox
             {
@@ -307,25 +284,23 @@ namespace OOP.Presentation
             };
             _cmbVehicleType.Items.AddRange(new object[]
             {
-        new VehicleItem("Xe máy (Motorbike)", VehicleType.Motorbike),
-        new VehicleItem("Ô tô (Car)", VehicleType.Car)
+                new VehicleItem("Xe máy (Motorbike)", VehicleType.Motorbike),
+                new VehicleItem("Ô tô (Car)", VehicleType.Car)
             });
             _cmbVehicleType.SelectedIndex = 0;
-            _cmbVehicleType.SelectedIndexChanged += (s, e) => UpdateVehicleTypeUI(); // Hợp nhất hàm xử lý
+            _cmbVehicleType.SelectedIndexChanged += (s, e) => UpdateVehicleTypeUI();
             card.Controls.Add(_cmbVehicleType);
             y += InputHeight + Gap;
 
-            // 2. Các trường text
             AddField(card, "Biển số xe", ref y, _txtPlate = MakeInput("VD: 59X1-12345"));
-            _txtPlate.CharacterCasing = CharacterCasing.Upper; // Tự động viết hoa biển số
-            AddField(card, "Số bằng lái xe", ref y, _txtLicense = MakeInput("Nhập số GPLX (VD: A1-12345)"));
+            _txtPlate.CharacterCasing = CharacterCasing.Upper;
+            AddField(card, "Số bằng lái xe", ref y, _txtLicense = MakeInput("VD: A1-12345"));
             _txtLicense.CharacterCasing = CharacterCasing.Upper;
 
             AddField(card, "Hãng xe", ref y, _txtBrand = MakeInput("VD: Honda, Toyota"));
             AddField(card, "Dòng xe (Model)", ref y, _txtModel = MakeInput("VD: Vision, Vios"));
             AddField(card, "Màu xe", ref y, _txtColor = MakeInput("VD: Đỏ, Trắng"));
 
-            // 3. Số chỗ ngồi (NumericUpDown)
             AddLabel(card, "Số chỗ ngồi", ref y);
             _numCapacity = new NumericUpDown
             {
@@ -336,13 +311,11 @@ namespace OOP.Presentation
             };
             card.Controls.Add(_numCapacity);
 
-            // Gọi cập nhật mặc định ngay khi khởi tạo
             UpdateVehicleTypeUI();
         }
 
-        // ─── Events ──────────────────────────────────────────────────────────────
+        // ── Events ─────────────────────────────────────────────────────────
 
-        // Ẩn/hiện card xe theo vai trò
         private void OnRoleChanged()
         {
             bool isDriver = _rdoDriver.Checked;
@@ -350,7 +323,6 @@ namespace OOP.Presentation
             LayoutCards();
         }
 
-        // Đăng ký
         private async void OnRegisterClicked(object? sender, EventArgs e)
         {
             _lblError.Text = "";
@@ -376,7 +348,6 @@ namespace OOP.Presentation
                 }
                 else
                 {
-                    // 1. Đọc thông tin xe
                     var vehicleItem = (VehicleItem)_cmbVehicleType.SelectedItem!;
                     var plate = _txtPlate.Text.Trim();
                     var brand = _txtBrand.Text.Trim();
@@ -384,22 +355,20 @@ namespace OOP.Presentation
                     var color = _txtColor.Text.Trim();
                     var capacity = (byte)_numCapacity.Value;
                     string license = _txtLicense.Text.Trim();
-                    // 2. Sử dụng Đa hình để tạo object Vehicle đúng loại
+
                     Vehicle vehicle = vehicleItem.Type switch
                     {
-                        VehicleType.Motorbike => new Motorbike(Guid.Empty, plate, brand, model, color),
-                        VehicleType.Car => new Car(Guid.Empty, plate, brand, model, color, capacity),
+                        VehicleType.Motorbike => new Motorbike(Guid.NewGuid(), plate, brand, model, color),
+                        VehicleType.Car => new Car(Guid.NewGuid(), plate, brand, model, color, capacity),
                         _ => throw new InvalidOperationException("Loại xe không hỗ trợ")
                     };
 
-                    // 3. Khởi tạo vị trí mặc định (Ví dụ: Trung tâm Quận 1)
                     var defaultLocation = new OOP.Domain.Entities.Location(
                         name: "Vị trí hiện tại",
                         address: "TP. Hồ Chí Minh",
                         lat: 10.7769,
                         lng: 106.7009);
 
-                    // 4. Gọi service đăng ký tài xế
                     await _authService.RegisterDriver(
                         name,
                         phone,
@@ -429,26 +398,23 @@ namespace OOP.Presentation
             }
         }
 
-        // Quay lại (đóng form, MainForm vẫn còn đó)
         private void OnBackClicked(object? sender, EventArgs e)
         {
             Close();
         }
 
-        // ─── Validation ──────────────────────────────────────────────────────────
+        // ── Validation ─────────────────────────────────────────────────────
 
         private bool Validate_Fields()
         {
             bool ok = true;
 
-            // Họ tên
             if (_txtName.Text.Trim().Length < 2)
             {
                 _errorProvider.SetError(_txtName, "Tên phải có ít nhất 2 ký tự");
                 ok = false;
             }
 
-            // Số điện thoại — dùng UserValidator để nhất quán
             try { UserValidator.ValidatePhone(_txtPhone.Text.Trim()); }
             catch (ArgumentException ex)
             {
@@ -456,7 +422,6 @@ namespace OOP.Presentation
                 ok = false;
             }
 
-            // Mật khẩu
             try { UserValidator.ValidatePassword(_txtPassword.Text); }
             catch (ArgumentException ex)
             {
@@ -464,7 +429,6 @@ namespace OOP.Presentation
                 ok = false;
             }
 
-            // Thông tin xe (chỉ khi là Driver)
             if (_rdoDriver.Checked)
             {
                 if (string.IsNullOrWhiteSpace(_txtPlate.Text))
@@ -478,6 +442,7 @@ namespace OOP.Presentation
 
                 if (string.IsNullOrWhiteSpace(_txtColor.Text))
                 { _errorProvider.SetError(_txtColor, "Vui lòng nhập màu xe"); ok = false; }
+
                 if (string.IsNullOrWhiteSpace(_txtLicense.Text))
                 {
                     _errorProvider.SetError(_txtLicense, "Vui lòng nhập số bằng lái xe");
@@ -488,13 +453,12 @@ namespace OOP.Presentation
             return ok;
         }
 
-        // ─── Helpers ─────────────────────────────────────────────────────────────
+        // ── Helpers ────────────────────────────────────────────────────────
 
-        // Căn giữa 2 card — khi chỉ có Passenger thì 1 card ở giữa
         private void LayoutCards()
         {
             const int gap = 24;
-            const int top = 80;  // dưới tiêu đề
+            const int top = 140;
 
             if (_cardVehicle.Visible)
             {
@@ -510,20 +474,16 @@ namespace OOP.Presentation
             }
         }
 
-        /// <summary>
-        /// Ở field cuối cùng, Enter sẽ kích hoạt luôn nút Đăng ký.
-        /// Dùng cho trải nghiệm "Enter tại field cuối → Register".
-        /// </summary>
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
             if (keyData == Keys.Enter && _btnRegister.Enabled)
             {
-                // Nếu focus đang ở một control input trong form thì cho phép submit nhanh
                 _btnRegister.PerformClick();
                 return true;
             }
             return base.ProcessCmdKey(ref msg, keyData);
         }
+
         private void UpdateVehicleTypeUI()
         {
             var item = (VehicleItem)_cmbVehicleType.SelectedItem!;
@@ -545,16 +505,16 @@ namespace OOP.Presentation
                     _numCapacity.Value = 4;
             }
         }
+
         private void ShowSuccess(string message, string phone, string password, UserRole role)
         {
             MessageBox.Show(message, "Thành công",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
 
-            // Phát event để form gọi RegisterForm có thể tự đăng nhập
             RegisteredSuccessfully?.Invoke(phone, password, role);
 
             ResetForm();
-            Close(); // quay về màn trước (thường là MainForm)
+            Close();
         }
 
         private void ResetForm()
@@ -574,9 +534,6 @@ namespace OOP.Presentation
             _errorProvider.Clear();
         }
 
-        /// <summary>
-        /// Gắn hành vi Enter → chuyển sang control tiếp theo.
-        /// </summary>
         private void AttachEnterToNext(Control control)
         {
             control.KeyDown += (s, e) =>
@@ -597,29 +554,6 @@ namespace OOP.Presentation
             Cursor = loading ? Cursors.WaitCursor : Cursors.Default;
         }
 
-        // ─── UI Factories ─────────────────────────────────────────────────────────
-
-        private static Panel MakeCard(int width, int height)
-        {
-            var p = new Panel
-            {
-                Width = width,
-                Height = height,
-                BackColor = Color.White,
-                Padding = new Padding(0)
-            };
-            p.Paint += (s, e) =>
-            {
-                var g = e.Graphics;
-                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                var rect = new Rectangle(0, 0, p.Width - 1, p.Height - 1);
-                using var pen = new Pen(Color.FromArgb(220, 220, 220));
-                using var path = RoundedPath(rect, 12);
-                g.DrawPath(pen, path);
-            };
-            return p;
-        }
-
         private static Label MakeLabel(string text, float size = 9.5f,
             FontStyle style = FontStyle.Bold)
         {
@@ -627,7 +561,7 @@ namespace OOP.Presentation
             {
                 Text = text,
                 Font = new Font("Segoe UI", size, style),
-                ForeColor = Color.FromArgb(70, 70, 70),
+                ForeColor = AppTheme.TextMuted,
                 BackColor = Color.Transparent,
                 AutoSize = false
             };
@@ -643,7 +577,6 @@ namespace OOP.Presentation
             };
         }
 
-        // Thêm label + input vào card, tự tăng y
         private void AddField(Panel card, string labelText, ref int y, TextBox input)
         {
             AddLabel(card, labelText, ref y);
@@ -676,28 +609,10 @@ namespace OOP.Presentation
                 Top = y,
                 Width = CardWidth - CardPad * 2,
                 Height = 1,
-                BackColor = Color.FromArgb(230, 230, 230)
+                BackColor = AppTheme.BorderLight
             };
             card.Controls.Add(sep);
             return sep;
-        }
-
-        private static void HoverEffect(Button btn, Color normal, Color hover)
-        {
-            btn.MouseEnter += (s, e) => { if (btn.Enabled) btn.BackColor = hover; };
-            btn.MouseLeave += (s, e) => { if (btn.Enabled) btn.BackColor = normal; };
-        }
-
-        private static System.Drawing.Drawing2D.GraphicsPath RoundedPath(Rectangle r, int radius)
-        {
-            var path = new System.Drawing.Drawing2D.GraphicsPath();
-            int d = radius * 2;
-            path.AddArc(r.X, r.Y, d, d, 180, 90);
-            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-            path.CloseFigure();
-            return path;
         }
 
         protected override void Dispose(bool disposing)
@@ -706,9 +621,6 @@ namespace OOP.Presentation
             base.Dispose(disposing);
         }
 
-        // ─── Inner types ─────────────────────────────────────────────────────────
-
-        // ComboBox item gọn — tránh generic record bị lộ ToString phức tạp
         private sealed class VehicleItem
         {
             public string Label { get; }

@@ -1,4 +1,4 @@
-﻿using OOP.Application.Validators;
+﻿﻿using OOP.Application.Validators;
 using OOP.Domain.Enums;
 using System.Runtime.Serialization;
 
@@ -8,69 +8,53 @@ namespace OOP.Domain.Entities
     [DataContract]
     public class Trip
     {
-        // --- 1. Định danh ---
-        [DataMember]
-        public Guid Id { get; init; }
-        [DataMember]
-        public Guid PassengerId { get; init; }
-        [DataMember]
-        public Guid? DriverId { get; private set; }
-        [DataMember]
-        public Guid FareRuleId { get; init; }
-        // --- 2. Lộ trình ---
-        [DataMember]
-        public Location PickupLocation { get; init; }
+        // ── 1. Định danh ──────────────────────────────────────────────────────
+        [DataMember] public Guid Id { get; init; }
+        [DataMember] public Guid PassengerId { get; init; }
+        [DataMember] public Guid? DriverId { get; private set; }
+        [DataMember] public Guid FareRuleId { get; init; }
 
-        [DataMember]
-        public Location DestinationLocation { get; init; }
-        [DataMember]
-        public VehicleType VehicleType { get; init; }
-        // --- 3. Kết quả chuyến (gán sau khi hoàn thành) ---
-        [DataMember]
-        public double Distance { get; private set; }    // km
-        [DataMember]
-        public double Duration { get; private set; }    // phút
-        [DataMember]
-        public decimal Fare { get; private set; }
-        // --- 4. Trạng thái ---
-        [DataMember]
-        public TripStatus Status { get; private set; }
-        [DataMember]
-        public string? CancelReason { get; private set; }
-        // --- 5. Thời gian ---
-        [DataMember]
-        public DateTime RequestedAt { get; init; }
-        [DataMember]
-        public DateTime? MatchedAt { get; private set; }
+        // ── 2. Lộ trình ───────────────────────────────────────────────────────
+        [DataMember] public Location PickupLocation { get; init; }
+        [DataMember] public Location DestinationLocation { get; init; }
+        [DataMember] public VehicleType VehicleType { get; init; }
 
-        [DataMember]
-        public DateTime? ArrivedAt { get; private set; }
+        // ── 3. Kết quả chuyến (gán sau khi hoàn thành) ───────────────────────
+        [DataMember] public double Distance { get; private set; }  // km
+        [DataMember] public double Duration { get; private set; }  // phút
+        [DataMember] public decimal Fare { get; private set; }
 
-        [DataMember]
-        public DateTime? StartedAt { get; private set; }
+        // ── 4. Trạng thái ─────────────────────────────────────────────────────
+        [DataMember] public TripStatus Status { get; private set; }
+        [DataMember] public string? CancelReason { get; private set; }
 
-        [DataMember]
-        public DateTime? CompletedAt { get; private set; }
-        [DataMember]
-        public DateTime? CancelledAt { get; private set; }
-        [DataMember]
-        public bool IsRated { get; private set; } = false;
+        // ── 5. Thời gian ─────────────────────────────────────────────────────
+        [DataMember] public DateTime RequestedAt { get; init; }
+        [DataMember] public DateTime? MatchedAt { get; private set; }
+        [DataMember] public DateTime? ArrivedAt { get; private set; }
+        [DataMember] public DateTime? StartedAt { get; private set; }
+        [DataMember] public DateTime? CompletedAt { get; private set; }
+        [DataMember] public DateTime? CancelledAt { get; private set; }
+
+        [DataMember] public bool IsRated { get; private set; } = false;
+
         protected Trip() { }
+
         public Trip(
-      Guid passengerId,
-      Guid fareRuleId,
-      Location pickupLocation,
-      Location destinationLocation,
-      VehicleType vehicleType,
-      double routeDistance)
+            Guid passengerId,
+            Guid fareRuleId,
+            Location pickupLocation,
+            Location destinationLocation,
+            VehicleType vehicleType,
+            double routeDistance)
         {
             TripValidator.ValidateRequest(pickupLocation, destinationLocation, vehicleType, routeDistance);
 
             if (passengerId == Guid.Empty)
-                throw new ArgumentException("PassengerId không hợp lệ.");
+                throw new ArgumentException("PassengerId không hợp lệ.", nameof(passengerId));
 
             if (fareRuleId == Guid.Empty)
-                throw new ArgumentException("FareRuleId không hợp lệ.");
+                throw new ArgumentException("FareRuleId không hợp lệ.", nameof(fareRuleId));
 
             Id = Guid.NewGuid();
             PassengerId = passengerId;
@@ -80,39 +64,46 @@ namespace OOP.Domain.Entities
             VehicleType = vehicleType;
             Distance = routeDistance;
             Status = TripStatus.Requested;
-            RequestedAt = DateTime.Now;
+            RequestedAt = DateTime.UtcNow;   
         }
-        // --- Thay đổi trạng thái ---
+
+        // ── Thay đổi trạng thái ───────────────────────────────────────────────
+
         // Requested → Matched
         public void AssignDriver(Guid driverId)
         {
             if (Status != TripStatus.Requested)
-                throw new InvalidOperationException("Chỉ có thể assign driver khi trip đang ở trạng thái Requested.");
+                throw new InvalidOperationException(
+                    "Chỉ có thể assign driver khi trip đang ở trạng thái Requested.");
 
             if (driverId == Guid.Empty)
-                throw new ArgumentException("DriverId không hợp lệ.");
+                throw new ArgumentException("DriverId không hợp lệ.", nameof(driverId));
 
             DriverId = driverId;
             Status = TripStatus.Matched;
-            MatchedAt = DateTime.Now;
+            MatchedAt = DateTime.UtcNow;  
         }
+
         // Matched → Arrived
         public void MarkArrived()
         {
             if (Status != TripStatus.Matched)
-                throw new InvalidOperationException("Driver phải ở trạng thái Matched trước khi Arrived.");
+                throw new InvalidOperationException(
+                    "Driver phải ở trạng thái Matched trước khi Arrived.");
 
             Status = TripStatus.Arrived;
-            ArrivedAt = DateTime.Now;
+            ArrivedAt = DateTime.UtcNow;   
         }
+
         // Arrived → Ongoing
         public void StartTrip()
         {
             TripValidator.ValidateStart(this);
 
             Status = TripStatus.Ongoing;
-            StartedAt = DateTime.Now;
+            StartedAt = DateTime.UtcNow;   
         }
+
         // Ongoing → Completed
         public void CompleteTrip(double distance, double duration, decimal fare)
         {
@@ -122,56 +113,75 @@ namespace OOP.Domain.Entities
             Duration = duration;
             Fare = fare;
             Status = TripStatus.Completed;
-            CompletedAt = DateTime.Now;
+            CompletedAt = DateTime.UtcNow; 
         }
+
         // Bất kỳ trạng thái nào (trừ Completed/Cancelled) → Cancelled
         public void CancelTrip(string reason)
         {
             TripValidator.ValidateCancellation(this);
 
             if (string.IsNullOrWhiteSpace(reason))
-                throw new ArgumentException("Lý do hủy không được để trống.");
+                throw new ArgumentException("Lý do hủy không được để trống.", nameof(reason));
 
             CancelReason = reason;
             Status = TripStatus.Cancelled;
-            CancelledAt = DateTime.Now;
+            CancelledAt = DateTime.UtcNow;   
         }
-        // --- Ghi nhận kết quả sau chuyến---
+
+        // ── Ghi nhận kết quả trước khi hoàn thành ────────────────────────────
+
         public void ApplyFare(decimal fare)
         {
+            EnsureNotFinished(nameof(ApplyFare));
+
             if (fare < 0)
-                throw new ArgumentException("Cước phí không thể âm.");
+                throw new ArgumentException("Cước phí không thể âm.", nameof(fare));
 
             Fare = fare;
         }
 
         public void ApplyDistance(double distance)
         {
+            EnsureNotFinished(nameof(ApplyDistance));
+
             if (distance <= 0)
-                throw new ArgumentException("Khoảng cách phải lớn hơn 0.");
+                throw new ArgumentException("Khoảng cách phải lớn hơn 0.", nameof(distance));
 
             Distance = distance;
         }
 
         public void ApplyDuration(double duration)
         {
+            EnsureNotFinished(nameof(ApplyDuration));
+
             if (duration <= 0)
-                throw new ArgumentException("Thời gian phải lớn hơn 0.");
+                throw new ArgumentException("Thời gian phải lớn hơn 0.", nameof(duration));
 
             Duration = duration;
         }
+
+        private void EnsureNotFinished(string callerName)
+        {
+            if (Status == TripStatus.Completed || Status == TripStatus.Cancelled)
+                throw new InvalidOperationException(
+                    $"{callerName} không thể gọi trên chuyến đi đã kết thúc (Status: {Status}).");
+        }
+
         public void MarkAsRated()
         {
             if (Status != TripStatus.Completed)
-                throw new InvalidOperationException("Chỉ chuyến đi hoàn thành mới được đánh giá.");
+                throw new InvalidOperationException(
+                    "Chỉ chuyến đi hoàn thành mới được đánh giá.");
 
             if (IsRated)
                 throw new InvalidOperationException("Chuyến đi này đã được đánh giá rồi.");
 
             IsRated = true;
         }
+
         public override string ToString() =>
-            $"Trip {Id.ToString()[..8]} | {Status} | {PickupLocation.Label} → {DestinationLocation.Label}" +
-            $" | {Fare:N0} VNĐ";
+            $"Trip {Id.ToString()[..8]} | {Status} | " +
+            $"{PickupLocation.Name} → {DestinationLocation.Name} | {Fare:N0} VNĐ";
     }
 }

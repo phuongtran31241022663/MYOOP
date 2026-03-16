@@ -1,7 +1,8 @@
-using GMap.NET;
+﻿using GMap.NET;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Enums;
 using OOP.Infrastructure.Map;
+using OOP.Presentation;
 using OOP.Presentation.Map;
 using DomainLocation = OOP.Domain.Entities.Location;
 
@@ -52,10 +53,12 @@ namespace OOP.Presentation.TripForms
             InitForm();
             BuildUI();
 
-            this.Load += async (_, _) =>
+            Load += async (_, _) =>
             {
-                var addr = await _mapControl.ZoomToMyLocation();
-                TextBoxPickup.Text = addr;
+                await _mapControl.ZoomToMyLocation();
+                _mapControl.ClearRoute();
+                TextBoxPickup.Text = "";
+                TextBoxDestination.Text = "";
                 UpdateRequestButton();
             };
         }
@@ -65,35 +68,36 @@ namespace OOP.Presentation.TripForms
             Text = "RideGo - Đặt chuyến xe";
             Size = new Size(1100, 750);
             StartPosition = FormStartPosition.CenterScreen;
+            BackColor = AppTheme.PageBg;
+            Font = new Font("Segoe UI", 10f);
         }
 
         private void BuildUI()
         {
-            // ── Toolbar panel ─────────────────────────────────────────────────
             var panel = new FlowLayoutPanel
             {
                 Dock = DockStyle.Top,
-                Height = 56,
-                Padding = new Padding(8, 8, 8, 0),
-                BackColor = Color.WhiteSmoke
+                Height = 60,
+                Padding = new Padding(12, 10, 12, 0),
+                BackColor = AppTheme.CardBg
             };
 
             TextBoxPickup = new TextBox
             {
-                Width = 220,
+                Width = 230,
                 PlaceholderText = "Điểm đón...",
                 Font = new Font("Segoe UI", 10)
             };
             TextBoxDestination = new TextBox
             {
-                Width = 220,
+                Width = 230,
                 PlaceholderText = "Điểm đến...",
                 Font = new Font("Segoe UI", 10)
             };
 
             ComboVehicleType = new ComboBox
             {
-                Width = 110,
+                Width = 130,
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 Font = new Font("Segoe UI", 10)
             };
@@ -112,20 +116,20 @@ namespace OOP.Presentation.TripForms
                 Text = "Giá: --",
                 AutoSize = true,
                 Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                ForeColor = Color.DarkGreen,
+                ForeColor = AppTheme.Success,
                 TextAlign = ContentAlignment.MiddleLeft
             };
 
             ButtonRequestTrip = new Button
             {
                 Text = "ĐẶT XE",
-                Width = 90,
-                Height = 34,
-                BackColor = Color.FromArgb(25, 135, 84),
+                Width = 100,
+                Height = 36,
+                BackColor = AppTheme.Success,
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
                 Cursor = Cursors.Hand,
-                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
                 Enabled = false
             };
             ButtonRequestTrip.FlatAppearance.BorderSize = 0;
@@ -134,14 +138,13 @@ namespace OOP.Presentation.TripForms
             ButtonBack = new Button
             {
                 Text = "Thoát",
-                Width = 70,
-                Height = 34,
+                Width = 80,
+                Height = 36,
                 FlatStyle = FlatStyle.Flat,
                 Cursor = Cursors.Hand
             };
             ButtonBack.Click += (_, _) => Close();
 
-            // ── Debounce timer ────────────────────────────────────────────────
             _searchDebounceTimer.Tick += async (_, _) =>
             {
                 _searchDebounceTimer.Stop();
@@ -151,7 +154,6 @@ namespace OOP.Presentation.TripForms
             TextBoxPickup.TextChanged += (_, _) => RestartSearchTimer(TextBoxPickup);
             TextBoxDestination.TextChanged += (_, _) => RestartSearchTimer(TextBoxDestination);
 
-            // ── Suggestion list ───────────────────────────────────────────────
             _lstGlobalSuggestions.DrawItem += LstGlobalSuggestions_DrawItem;
 
             _lstGlobalSuggestions.MouseClick += async (_, _) =>
@@ -172,10 +174,8 @@ namespace OOP.Presentation.TripForms
                 UpdateRequestButton();
             };
 
-            // Dismiss suggestions when clicking elsewhere
-            this.Click += (_, _) => _lstGlobalSuggestions.Visible = false;
+            Click += (_, _) => _lstGlobalSuggestions.Visible = false;
 
-            // ── Build panel ───────────────────────────────────────────────────
             panel.Controls.Add(MakeLabel("Từ:"));
             panel.Controls.Add(TextBoxPickup);
             panel.Controls.Add(MakeLabel("Đến:"));
@@ -186,27 +186,29 @@ namespace OOP.Presentation.TripForms
             panel.Controls.Add(ButtonRequestTrip);
             panel.Controls.Add(ButtonBack);
 
-            // ── MapControl ────────────────────────────────────────────────────
             _mapControl = new MapControl(_http, _routeService) { Dock = DockStyle.Fill };
+            _mapControl.SetPickupSelector(() => _activeTextBox == TextBoxPickup || _activeTextBox == null);
             _mapControl.LocationSelected += (point, address, isPickup) =>
             {
-                if (isPickup) TextBoxPickup.Text = address;
+                bool usePickup = _activeTextBox == TextBoxPickup || _activeTextBox == null;
+                if (usePickup) TextBoxPickup.Text = address;
                 else TextBoxDestination.Text = address;
 
                 UpdateRequestButton();
                 _ = UpdateEstimation();
             };
 
-            // Add the suggestion list to the form so it floats over everything
             Controls.Add(_lstGlobalSuggestions);
             _lstGlobalSuggestions.BringToFront();
 
-            Controls.Add(_mapControl); // Fill — add first
-            Controls.Add(panel);       // Top  — add last (WinForms lays out from end of list)
+            Controls.Add(_mapControl);
+            Controls.Add(panel);
             _mapControl.Show();
+
+            TextBoxPickup.GotFocus += (_, _) => _activeTextBox = TextBoxPickup;
+            TextBoxDestination.GotFocus += (_, _) => _activeTextBox = TextBoxDestination;
         }
 
-        // ── Search / suggestions ──────────────────────────────────────────────
         private void RestartSearchTimer(TextBox tb)
         {
             _activeTextBox = tb;
@@ -231,7 +233,7 @@ namespace OOP.Presentation.TripForms
 
                 Point screenPos = _activeTextBox.Parent.PointToScreen(
                     new Point(_activeTextBox.Left, _activeTextBox.Bottom));
-                _lstGlobalSuggestions.Location = this.PointToClient(screenPos);
+                _lstGlobalSuggestions.Location = PointToClient(screenPos);
                 _lstGlobalSuggestions.Width = _activeTextBox.Width;
                 _lstGlobalSuggestions.Height = Math.Min(results.Count * 45, 180);
                 _lstGlobalSuggestions.Visible = true;
@@ -262,7 +264,6 @@ namespace OOP.Presentation.TripForms
             e.DrawFocusRectangle();
         }
 
-        // ── Logic ─────────────────────────────────────────────────────────────
         private void UpdateRequestButton()
         {
             bool hasPickup = _mapControl.PickupPoint != default(PointLatLng);
@@ -270,8 +271,8 @@ namespace OOP.Presentation.TripForms
 
             ButtonRequestTrip.Enabled = hasPickup && hasDropoff;
             ButtonRequestTrip.BackColor = ButtonRequestTrip.Enabled
-                ? Color.FromArgb(25, 135, 84)
-                : Color.Gray;
+                ? AppTheme.Success
+                : AppTheme.Disabled;
         }
 
         private async Task UpdateEstimation()
@@ -356,7 +357,6 @@ namespace OOP.Presentation.TripForms
             }
         }
 
-        // ── Helpers ───────────────────────────────────────────────────────────
         private static Label MakeLabel(string text) => new Label
         {
             Text = text,
@@ -377,3 +377,4 @@ namespace OOP.Presentation.TripForms
         }
     }
 }
+

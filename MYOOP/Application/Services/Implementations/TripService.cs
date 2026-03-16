@@ -1,4 +1,4 @@
-﻿using OOP.Application.Services.Interfaces;
+﻿﻿using OOP.Application.Services.Interfaces;
 using OOP.Application.Validators;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
@@ -200,6 +200,19 @@ namespace OOP.Application.Services
                 .ToList();
         }
 
+        public async Task<List<Trip>> GetAvailableTripsForDriver(Guid driverId)
+        {
+            var driver = await GetDriverOrThrow(driverId);
+            if (driver.Status != DriverStatus.Available) return new List<Trip>();
+
+            var trips = await _tripRepo.GetAll();
+            return trips
+                .Where(t => t.Status == TripStatus.Requested &&
+                            t.VehicleType == driver.Vehicle.Type)
+                .OrderBy(t => t.RequestedAt)
+                .ToList();
+        }
+
         public async Task<List<Trip>> GetByUserId(Guid id)
         {
             var byPassenger = await _tripRepo.GetByPassengerId(id);
@@ -229,3 +242,4 @@ namespace OOP.Application.Services
         }
     }
 }
+
