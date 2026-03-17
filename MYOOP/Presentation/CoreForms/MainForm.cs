@@ -1,4 +1,4 @@
-﻿﻿using OOP.Presentation;
+﻿﻿﻿using OOP.Presentation;
 using OOP.Domain.Entities;
 using OOP.Application.Services.Interfaces;
 
@@ -127,12 +127,26 @@ namespace OOP
                 Font = new Font("Segoe UI", 8.5f)
             };
             stack.Controls.Add(lblTest);
+
+            var chkSim = new CheckBox
+            {
+                Text = "Bật mô phỏng tự động",
+                Checked = Program.SimulationConfig.Enabled,
+                AutoSize = false,
+                Width = 280,
+                Height = 24,
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            chkSim.CheckedChanged += (_, _) =>
+                Program.SimulationConfig.Enabled = chkSim.Checked;
+            stack.Controls.Add(chkSim);
             stack.Controls.Add(ButtonExit);
 
             ButtonLogin.Margin = new Padding(0, 0, 0, 12);
             ButtonRegister.Margin = new Padding(0, 0, 0, 12);
             ButtonDual.Margin = new Padding(0, 0, 0, 12);
             lblTest.Margin = new Padding(0, 0, 0, 8);
+            chkSim.Margin = new Padding(0, 0, 0, 8);
 
             card.Controls.Add(stack);
             Controls.Add(card);

@@ -1,7 +1,8 @@
-﻿﻿using OOP.Application.Interfaces;
+﻿﻿﻿﻿using OOP.Application.Interfaces;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
+using OOP.Presentation.TripForms;
 using OOP.Presentation.TripForms;
 
 namespace OOP.Presentation
@@ -13,6 +14,7 @@ namespace OOP.Presentation
         private readonly ITripService _tripService;
         private readonly IUserService _userService;
         private readonly IRouteService _routeService;
+        private readonly INotificationService _notification;
 
         // --- Controls ---
         private Label _lblDriverName = null!;
@@ -30,6 +32,7 @@ namespace OOP.Presentation
         private Button _btnLogout = null!;
         private Label _lblCurrentTrip = null!;
         private Panel _pnlCurrentTrip = null!;
+        private ListBox _lstLog = null!;
 
         // --- State ---
         private Trip? _currentTrip;
@@ -51,19 +54,27 @@ namespace OOP.Presentation
             Driver driver,
             ITripService tripService,
             IUserService userService,
-            IRouteService routeService)
+            IRouteService routeService,
+            INotificationService notification)
         {
             _driver = driver ?? throw new ArgumentNullException(nameof(driver));
             _tripService = tripService ?? throw new ArgumentNullException(nameof(tripService));
             _userService = userService ?? throw new ArgumentNullException(nameof(userService));
             _routeService = routeService ?? throw new ArgumentNullException(nameof(routeService));
+            _notification = notification ?? throw new ArgumentNullException(nameof(notification));
 
             InitForm();
             BuildUI();
+            _notification.OnTripUpdated += OnTripUpdated;
             Load += async (s, e) =>
             {
                 if (_dgvTrips != null)
                     await LoadAvailableTrips();
+            };
+
+            FormClosed += (_, _) =>
+            {
+                _notification.OnTripUpdated -= OnTripUpdated;
             };
         }
 
@@ -235,8 +246,19 @@ namespace OOP.Presentation
             };
             _pnlCurrentTrip.Controls.Add(_lblCurrentTrip);
 
+            _lstLog = new ListBox
+            {
+                Dock = DockStyle.Bottom,
+                Height = 100,
+                Font = new Font("Segoe UI", 8.5f),
+                ForeColor = Color.FromArgb(70, 70, 70),
+                BorderStyle = BorderStyle.None,
+                BackColor = Color.FromArgb(248, 249, 250)
+            };
+
             main.Controls.Add(_dgvTrips);
             main.Controls.Add(_pnlCurrentTrip);
+            main.Controls.Add(_lstLog);
             main.Controls.Add(toolbar);
 
             Controls.Add(main);
@@ -530,7 +552,7 @@ namespace OOP.Presentation
 
             // Complete: đang Ongoing
             _btnComplete.Visible = tripStatus == TripStatus.Ongoing;
-            _btnRoute.Visible = _currentTrip != null;
+            _btnRoute.Visible = hasSelection || _currentTrip != null;
 
             // Đổi text của Start theo trạng thái
             if (_btnStart.Visible)
@@ -541,20 +563,43 @@ namespace OOP.Presentation
 
         private void OnViewRouteClicked()
         {
-            if (_currentTrip == null)
+            var selected = GetSelectedTripId();
+            var tripId = selected ?? _currentTrip?.Id;
+            if (tripId == null)
             {
-                MessageBox.Show("Chưa có chuyến hiện tại.", "Thông báo",
+                MessageBox.Show("Chưa chọn chuyến đi.", "Thông báo",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
             using var form = new DriverTripForm(
-                _currentTrip.Id,
+                tripId.Value,
                 _driver.Id,
                 _tripService,
-                _routeService);
+                _routeService,
+                _userService);
             form.StartPosition = FormStartPosition.CenterParent;
             form.ShowDialog(this);
+        }
+
+        private async void OnTripUpdated(Guid tripId, string message)
+        {
+            try
+            {
+                var trip = await _tripService.GetTrip(tripId);
+                if (trip?.DriverId != _driver.Id) return;
+
+                if (InvokeRequired)
+                {
+                    BeginInvoke(() => OnTripUpdated(tripId, message));
+                    return;
+                }
+
+                if (_lstLog.Items.Count >= 200) _lstLog.Items.RemoveAt(0);
+                _lstLog.Items.Add($"[{DateTime.Now:HH:mm}] {message}");
+                _lstLog.TopIndex = _lstLog.Items.Count - 1;
+            }
+            catch { }
         }
 
         // Persist trạng thái driver qua UserService (để lưu vào storage)

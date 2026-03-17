@@ -1,4 +1,4 @@
-﻿﻿using OOP.Application.Services;
+﻿﻿﻿using OOP.Application.Services;
 using OOP.Infrastructure.Map;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
@@ -112,7 +112,7 @@ namespace OOP
                 );
 
             Func<Driver, Form> driverDashboardFactory = d =>
-                new DriverDashboardForm(d, tripService, userService, routeService);
+                new DriverDashboardForm(d, tripService, userService, routeService, notificationService);
 
             Func<Admin, Form> adminDashboardFactory = a =>
                 new AdminDashboardForm(a, adminService);
@@ -130,6 +130,7 @@ namespace OOP
             {
                 try
                 {
+                    if (!SimulationConfig.Enabled) return;
                     await simulationService.UpdateDriverLocations();
                     var trips = await tripRepo.GetAll();
                     var active = trips
@@ -152,6 +153,11 @@ namespace OOP
                     authService,
                     passengerDashboardFactory,
                     driverDashboardFactory));
+        }
+
+        internal static class SimulationConfig
+        {
+            public static bool Enabled { get; set; } = true;
         }
 
         private static async Task SeedData(

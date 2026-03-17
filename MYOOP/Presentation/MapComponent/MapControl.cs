@@ -1,4 +1,4 @@
-﻿﻿using GMap.NET;
+﻿﻿﻿using GMap.NET;
 using GMap.NET.MapProviders;
 using GMap.NET.WindowsForms;
 using GMap.NET.WindowsForms.Markers;
@@ -53,6 +53,12 @@ namespace OOP.Presentation.Map
         // ── Nominatim rate-limit (TOS: max 1 req/s) ───────────────────────────
         private DateTime _lastNominatimCall = DateTime.MinValue;
         private const int NominatimIntervalMs = 1100;
+
+        // ── HCMC bounds (approx) ─────────────────────────────────────────────
+        private static readonly double HcmMinLat = 10.35;
+        private static readonly double HcmMaxLat = 11.20;
+        private static readonly double HcmMinLng = 106.40;
+        private static readonly double HcmMaxLng = 107.10;
 
         // ── Geocode cache ─────────────────────────────────────────────────────
         private readonly Dictionary<string, string> reverseCache = new();
@@ -130,8 +136,16 @@ namespace OOP.Presentation.Map
             gmap.Overlays.Add(pickupOverlay);
             gmap.Overlays.Add(dropoffOverlay);
 
-            gmap.OnMapDrag += async () => await LoadPOI(gmap.Position);
-            gmap.OnMapZoomChanged += async () => await LoadPOI(gmap.Position);
+            gmap.OnMapDrag += async () =>
+            {
+                ClampMapToHcm();
+                await LoadPOI(gmap.Position);
+            };
+            gmap.OnMapZoomChanged += async () =>
+            {
+                ClampMapToHcm();
+                await LoadPOI(gmap.Position);
+            };
 
             gmap.MouseDown += MapMouseDown;
             gmap.MouseMove += MapMouseMove;
@@ -260,7 +274,7 @@ namespace OOP.Presentation.Map
         {
             try
             {
-                PointLatLng point = gmap.FromLocalToLatLng(x, y);
+                PointLatLng point = ClampPoint(gmap.FromLocalToLatLng(x, y));
                 string address = await GetAddressFromPoint(point);
                 bool isPickup = _isPickupSelector?.Invoke() ?? (pickupPoint == default(PointLatLng));
 
@@ -278,7 +292,7 @@ namespace OOP.Presentation.Map
         {
             try
             {
-                PointLatLng point = gmap.FromLocalToLatLng(x, y);
+                PointLatLng point = ClampPoint(gmap.FromLocalToLatLng(x, y));
                 string address = await GetAddressFromPoint(point);
                 bool isPickup = _isPickupSelector?.Invoke() ?? (pickupPoint == default(PointLatLng));
 
@@ -564,7 +578,7 @@ namespace OOP.Presentation.Map
             {
                 var obj = JObject.Parse(await _http.GetStringAsync("https://ipapi.co/json/"));
                 if (obj["latitude"] == null) return "Vị trí hiện tại";
-                var point = new PointLatLng((double)obj["latitude"]!, (double)obj["longitude"]!);
+                var point = ClampPoint(new PointLatLng((double)obj["latitude"]!, (double)obj["longitude"]!));
                 gmap.Position = point;
                 gmap.Zoom = 15;
                 SetPickupMarker(point);
@@ -622,6 +636,23 @@ namespace OOP.Presentation.Map
 
         private static PointLatLng ToPointLatLng(DomainLocation l) =>
             new(l.Lat, l.Lng);
+
+        private static PointLatLng ClampPoint(PointLatLng p)
+        {
+            double lat = Math.Min(HcmMaxLat, Math.Max(HcmMinLat, p.Lat));
+            double lng = Math.Min(HcmMaxLng, Math.Max(HcmMinLng, p.Lng));
+            return new PointLatLng(lat, lng);
+        }
+
+        private void ClampMapToHcm()
+        {
+            var clamped = ClampPoint(gmap.Position);
+            if (Math.Abs(clamped.Lat - gmap.Position.Lat) > 0.0001 ||
+                Math.Abs(clamped.Lng - gmap.Position.Lng) > 0.0001)
+            {
+                gmap.Position = clamped;
+            }
+        }
 
         // ═════════════════════════════════════════════════════════════════════
         // Misc helpers

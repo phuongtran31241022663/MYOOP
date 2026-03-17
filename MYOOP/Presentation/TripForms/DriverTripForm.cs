@@ -1,9 +1,10 @@
-﻿﻿using GMap.NET;
+﻿﻿﻿﻿using GMap.NET;
 using GMap.NET.MapProviders;
 using GMap.NET.WindowsForms;
 using GMap.NET.WindowsForms.Markers;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
+using OOP.Domain.Enums;
 
 // FIX #1: was "MYOOP.Presentation.TripForms" — typo caused the class to live
 //         in a different namespace from the rest of the project.
@@ -15,12 +16,16 @@ namespace OOP.Presentation.TripForms
         private readonly Guid _driverId;
         private readonly ITripService _tripService;
         private readonly IRouteService _routeService;
+        private readonly IUserService _userService;
 
         private Trip? _trip;
+        private Driver? _driver;
+        private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 2000 };
 
         private GMapControl Map = null!;
         private GMapOverlay markerOverlay = new("markers");
         private GMapOverlay routeOverlay = new("route");
+        private GMapOverlay driverRouteOverlay = new("driverRoute");
 
         private Panel PanelTripInfo = null!;
         private Label LabelTripId = null!;
@@ -39,12 +44,14 @@ namespace OOP.Presentation.TripForms
             Guid tripId,
             Guid driverId,
             ITripService tripService,
-            IRouteService routeService)
+            IRouteService routeService,
+            IUserService userService)
         {
             _tripId = tripId;
             _driverId = driverId;
             _tripService = tripService;
             _routeService = routeService;
+            _userService = userService;
 
             InitializeUI();
             Load += async (_, _) =>
@@ -56,6 +63,11 @@ namespace OOP.Presentation.TripForms
                         MessageBoxButtons.OK, MessageBoxIcon.Error);
                     Close();
                 }
+            };
+            FormClosed += (_, _) =>
+            {
+                _refreshTimer.Stop();
+                _refreshTimer.Dispose();
             };
         }
 
@@ -72,6 +84,7 @@ namespace OOP.Presentation.TripForms
             Map.Position = new PointLatLng(10.7626, 106.6601);
             Map.Overlays.Add(markerOverlay);
             Map.Overlays.Add(routeOverlay);
+            Map.Overlays.Add(driverRouteOverlay);
 
             BuildTripPanel();
             Controls.Add(Map);
@@ -157,13 +170,9 @@ namespace OOP.Presentation.TripForms
 
         private async Task OnFormLoad()
         {
-            _trip = await _tripService.GetTrip(_tripId);
-            if (_trip == null) { MessageBox.Show("Không tìm thấy chuyến đi."); Close(); return; }
-
-            RefreshLabels();
-            SetMarkers();
-            await DrawRoute();
-            UpdateButtonStates();
+            await RefreshTripAsync();
+            _refreshTimer.Tick += async (_, _) => await RefreshTripAsync();
+            _refreshTimer.Start();
         }
 
         // FIX #2: all UI mutations now run on the UI thread
@@ -193,6 +202,13 @@ namespace OOP.Presentation.TripForms
         private void SetMarkers()
         {
             markerOverlay.Markers.Clear();
+            if (_driver != null)
+            {
+                markerOverlay.Markers.Add(new GMarkerGoogle(
+                    new PointLatLng(_driver.CurrentLocation.Lat, _driver.CurrentLocation.Lng),
+                    GMarkerGoogleType.blue_dot)
+                { ToolTipText = "Tài xế" });
+            }
             markerOverlay.Markers.Add(new GMarkerGoogle(
                 new PointLatLng(_trip!.PickupLocation.Lat, _trip.PickupLocation.Lng),
                 GMarkerGoogleType.green_dot)
@@ -203,23 +219,46 @@ namespace OOP.Presentation.TripForms
             { ToolTipText = "Điểm đến" });
         }
 
-        private async Task DrawRoute()
+        private async Task DrawRoutes()
         {
-            var route = await _routeService.GetFullRouteAsync(
-                _trip!.PickupLocation, _trip.DestinationLocation);
-            if (route == null || route.Points.Count < 2) return;
-
-            // FIX #3: dispose the old Pen before clearing, and keep ownership clear
             foreach (var r in routeOverlay.Routes) r.Stroke?.Dispose();
+            foreach (var r in driverRouteOverlay.Routes) r.Stroke?.Dispose();
             routeOverlay.Routes.Clear();
+            driverRouteOverlay.Routes.Clear();
 
-            var pen = new Pen(Color.FromArgb(180, 0, 120, 255), 4);
-            var mapRoute = new GMapRoute(
-                route.Points.Select(p => new PointLatLng(p.Lat, p.Lng)), "tripRoute")
-            { Stroke = pen };
+            if (_trip == null) return;
 
-            routeOverlay.Routes.Add(mapRoute);
-            Map.ZoomAndCenterRoute(mapRoute);
+            if ((_trip.Status == TripStatus.Matched || _trip.Status == TripStatus.Arrived) && _driver != null)
+            {
+                var points = await _routeService.GetRoutePointsAsync(
+                    _driver.CurrentLocation, _trip.PickupLocation);
+                if (points.Count >= 2)
+                {
+                    var pts = points.Select(p => new PointLatLng(p.Lat, p.Lng)).ToList();
+                    driverRouteOverlay.Routes.Add(new GMapRoute(pts, "driverToPickup")
+                    { Stroke = new Pen(Color.FromArgb(200, 0, 160, 60), 3) });
+                    Map.ZoomAndCenterRoute(driverRouteOverlay.Routes[0]);
+                    return;
+                }
+            }
+
+            if (_trip.Status == TripStatus.Ongoing || _trip.Status == TripStatus.Completed)
+            {
+                var route = await _routeService.GetFullRouteAsync(
+                    _trip.PickupLocation, _trip.DestinationLocation);
+                if (route != null && route.Points.Count >= 2)
+                {
+                    var pen = new Pen(Color.FromArgb(180, 0, 120, 255), 4);
+                    var mapRoute = new GMapRoute(
+                        route.Points.Select(p => new PointLatLng(p.Lat, p.Lng)), "tripRoute")
+                    { Stroke = pen };
+
+                    routeOverlay.Routes.Add(mapRoute);
+                    Map.ZoomAndCenterRoute(mapRoute);
+                }
+            }
+
+            Map.Refresh();
         }
 
         private async Task OnMarkArrivedClicked()
@@ -267,6 +306,7 @@ namespace OOP.Presentation.TripForms
 
         private static string StatusLabel(OOP.Domain.Enums.TripStatus status) => status switch
         {
+            OOP.Domain.Enums.TripStatus.Requested => "⏳ Đang chờ tài xế",
             OOP.Domain.Enums.TripStatus.Matched => "🤝 Đã nhận",
             OOP.Domain.Enums.TripStatus.Arrived => "📍 Đã đến nơi đón",
             OOP.Domain.Enums.TripStatus.Ongoing => "🚗 Đang chạy",
@@ -286,6 +326,19 @@ namespace OOP.Presentation.TripForms
                 foreach (var r in routeOverlay.Routes) r.Stroke?.Dispose();
             }
             base.Dispose(disposing);
+        }
+
+        private async Task RefreshTripAsync()
+        {
+            _trip = await _tripService.GetTrip(_tripId);
+            if (_trip == null) return;
+            var user = await _userService.GetUserProfile(_driverId);
+            _driver = user as Driver;
+
+            RefreshLabels();
+            SetMarkers();
+            await DrawRoutes();
+            UpdateButtonStates();
         }
     }
 }
