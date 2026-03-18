@@ -1,5 +1,5 @@
-﻿﻿using OOP.Application.Interfaces;
-using OOP.Application.Services.Interfaces;
+﻿﻿using OOP.Application.Services.Interfaces;
+using OOP.Application.Services.Models;
 using OOP.Application.Validators;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
@@ -16,6 +16,10 @@ namespace OOP.Presentation
         private DataGridView _dgvUsers = null!;
         private DataGridView _dgvTrips = null!;
         private DataGridView _dgvFareRules = null!;
+        private Label _lblTotalTrips = null!;
+        private Label _lblTotalRevenue = null!;
+        private Label _lblTotalDriverIncome = null!;
+        private Label _lblTotalCommission = null!;
 
         // --- Constants ---
         private static readonly Color Blue = AppTheme.Primary;
@@ -126,12 +130,16 @@ namespace OOP.Presentation
                 MakeCol("Name", "Họ tên", 180),
                 MakeCol("Phone", "Số điện thoại", 130),
                 MakeCol("Role", "Vai trò", 100),
+                MakeCol("DriverStatus", "Trạng thái TX", 120),
+                MakeCol("VehicleType", "Loại xe", 90),
                 MakeCol("IsActive", "Hoạt động", 90),
+                MakeCol("Rating", "Đánh giá", 90),
                 MakeCol("TotalTrips", "Tổng chuyến", 100)
             );
 
             page.Controls.Add(_dgvUsers);
             page.Controls.Add(toolbar);
+            toolbar.BringToFront();
             return page;
         }
 
@@ -147,13 +155,19 @@ namespace OOP.Presentation
                     int trips = u is Passenger p ? p.TotalTrips
                               : u is Driver d ? d.TotalTrips
                               : 0;
+                    string rating = u is Driver dr ? $"{dr.AverageRating:F1} ⭐" : "—";
+                    string driverStatus = u is Driver d1 ? d1.Status.ToString() : "—";
+                    string vehicleType = u is Driver d2 ? d2.Vehicle.Type.ToString() : "—";
 
                     _dgvUsers.Rows.Add(
                         u.Id,
                         u.Name,
                         u.Phone,
                         u.Role.ToString(),
+                        driverStatus,
+                        vehicleType,
                         u.IsActive ? "✅ Hoạt động" : "🔒 Đã khóa",
+                        rating,
                         trips);
                 }
             }
@@ -226,6 +240,55 @@ namespace OOP.Presentation
         {
             var page = new TabPage("🚗  Chuyến đi");
 
+            var reportPanel = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 64,
+                BackColor = AppTheme.CardBg,
+                Padding = new Padding(16, 8, 16, 8)
+            };
+
+            _lblTotalTrips = new Label
+            {
+                AutoSize = true,
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                ForeColor = AppTheme.TextPrimary,
+                Location = new Point(16, 12),
+                Text = "Tổng chuyến: --"
+            };
+
+            _lblTotalRevenue = new Label
+            {
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9.5F),
+                ForeColor = AppTheme.TextMuted,
+                Location = new Point(16, 34),
+                Text = "Doanh thu: --"
+            };
+
+            _lblTotalDriverIncome = new Label
+            {
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9.5F),
+                ForeColor = AppTheme.TextMuted,
+                Location = new Point(280, 34),
+                Text = "Thu nhập tài xế: --"
+            };
+
+            _lblTotalCommission = new Label
+            {
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9.5F),
+                ForeColor = AppTheme.TextMuted,
+                Location = new Point(560, 34),
+                Text = "Hoa hồng: --"
+            };
+
+            reportPanel.Controls.Add(_lblTotalTrips);
+            reportPanel.Controls.Add(_lblTotalRevenue);
+            reportPanel.Controls.Add(_lblTotalDriverIncome);
+            reportPanel.Controls.Add(_lblTotalCommission);
+
             var toolbar = MakeToolbar();
 
             var btnRefresh = MakeToolbarButton("🔄  Làm mới", Blue);
@@ -241,7 +304,10 @@ namespace OOP.Presentation
                 MakeCol("Passenger", "Hành khách", 160),
                 MakeCol("Driver", "Tài xế", 160),
                 MakeCol("VehicleType", "Loại xe", 90),
+                MakeCol("Pickup", "Điểm đón", 200),
+                MakeCol("Destination", "Điểm đến", 200),
                 MakeCol("Distance", "Khoảng cách", 110),
+                MakeCol("Duration", "Thời gian", 90),
                 MakeCol("Fare", "Cước phí", 110),
                 MakeCol("Status", "Trạng thái", 110),
                 MakeCol("RequestedAt", "Thời gian", 140)
@@ -249,6 +315,9 @@ namespace OOP.Presentation
 
             page.Controls.Add(_dgvTrips);
             page.Controls.Add(toolbar);
+            page.Controls.Add(reportPanel);
+            toolbar.BringToFront();
+            reportPanel.BringToFront();
             return page;
         }
 
@@ -278,13 +347,40 @@ namespace OOP.Presentation
                         passengerName,
                         driverName,
                         t.VehicleType.ToString(),
+                        t.PickupLocation?.Address ?? "–",
+                        t.DestinationLocation?.Address ?? "–",
                         t.Distance > 0 ? $"{t.Distance:F1} km" : "–",
+                        t.Duration > 0 ? $"{t.Duration:F0} phút" : "–",
                         t.Fare > 0 ? $"{t.Fare:N0} đ" : "–",
                         StatusLabel(t.Status),
                         t.RequestedAt.ToString("dd/MM/yyyy HH:mm"));
                 }
+
+                await LoadTripReport();
             }
             catch (Exception ex) { ShowError(ex.Message); }
+        }
+
+        private async Task LoadTripReport()
+        {
+            if (_lblTotalTrips == null) return;
+
+            try
+            {
+                TripReport report = await _adminService.GetTripReport();
+
+                _lblTotalTrips.Text = $"Tổng chuyến: {report.TotalTrips}";
+                _lblTotalRevenue.Text = $"Doanh thu: {report.TotalRevenue:N0} đ";
+                _lblTotalDriverIncome.Text = $"Thu nhập tài xế: {report.TotalDriverIncome:N0} đ";
+                _lblTotalCommission.Text = $"Hoa hồng: {report.TotalCommission:N0} đ";
+            }
+            catch
+            {
+                _lblTotalTrips.Text = "Tổng chuyến: --";
+                _lblTotalRevenue.Text = "Doanh thu: --";
+                _lblTotalDriverIncome.Text = "Thu nhập tài xế: --";
+                _lblTotalCommission.Text = "Hoa hồng: --";
+            }
         }
 
         // ─── Tab: Bảng giá ───────────────────────────────────────────────────────
@@ -298,10 +394,14 @@ namespace OOP.Presentation
             var btnRefresh = MakeToolbarButton("🔄  Làm mới", Blue);
             btnRefresh.Click += async (s, e) => await LoadFareRules();
 
+            var btnAdd = MakeToolbarButton("➕  Thêm", Green);
+            btnAdd.Click += async (s, e) => await OnAddFareRuleClicked();
+
             var btnEdit = MakeToolbarButton("✏️  Chỉnh sửa", Green);
             btnEdit.Click += async (s, e) => await OnEditFareRuleClicked();
 
             toolbar.Controls.Add(btnRefresh);
+            toolbar.Controls.Add(btnAdd);
             toolbar.Controls.Add(btnEdit);
 
             _dgvFareRules = MakeGrid();
@@ -317,6 +417,7 @@ namespace OOP.Presentation
 
             page.Controls.Add(_dgvFareRules);
             page.Controls.Add(toolbar);
+            toolbar.BringToFront();
             return page;
         }
 
@@ -388,6 +489,36 @@ namespace OOP.Presentation
                 await LoadFareRules();
 
                 MessageBox.Show("Cập nhật bảng giá thành công!",
+                    "Thành công", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (ArgumentException ex)
+            {
+                ShowError($"Dữ liệu không hợp lệ: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex.Message);
+            }
+        }
+
+        private async Task OnAddFareRuleClicked()
+        {
+            using var addForm = new AddFareRuleForm();
+            if (addForm.ShowDialog(this) != DialogResult.OK) return;
+
+            try
+            {
+                var rule = new Fare(
+                    addForm.NewVehicleType,
+                    addForm.NewBaseFare,
+                    addForm.NewPricePerKm,
+                    addForm.NewMinimumFare,
+                    addForm.NewCommissionRate);
+
+                await _adminService.CreateFareRule(rule);
+                await LoadFareRules();
+
+                MessageBox.Show("Tạo bảng giá thành công!",
                     "Thành công", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (ArgumentException ex)
@@ -479,11 +610,13 @@ namespace OOP.Presentation
         private static string StatusLabel(TripStatus status) => status switch
         {
             TripStatus.Requested => "⏳ Đang tìm tài xế",
+            TripStatus.Searching => "🔎 Đang tìm tài xế",
             TripStatus.Matched => "🤝 Đã ghép",
             TripStatus.Arrived => "📍 Tài xế đã đến",
-            TripStatus.Ongoing => "🚗 Đang chạy",
+            TripStatus.Started => "🚗 Đang chạy",
             TripStatus.Completed => "✅ Hoàn thành",
             TripStatus.Cancelled => "❌ Đã hủy",
+            TripStatus.Timeout => "⌛ Hết thời gian",
             _ => status.ToString()
         };
 
@@ -661,6 +794,189 @@ namespace OOP.Presentation
             return num;
         }
     }
+
+    public class AddFareRuleForm : Form
+    {
+        public VehicleType NewVehicleType { get; private set; }
+        public decimal NewBaseFare { get; private set; }
+        public decimal NewPricePerKm { get; private set; }
+        public decimal NewMinimumFare { get; private set; }
+        public decimal NewCommissionRate { get; private set; }  // 0..1
+
+        private ComboBox _cmbVehicleType = null!;
+        private NumericUpDown _numBaseFare = null!;
+        private NumericUpDown _numPricePerKm = null!;
+        private NumericUpDown _numMinimumFare = null!;
+        private NumericUpDown _numCommission = null!;
+
+        private static readonly Color Blue = Color.FromArgb(0, 122, 255);
+        private static readonly Color Green = Color.FromArgb(0, 150, 80);
+
+        public AddFareRuleForm()
+        {
+            Text = "Tạo bảng giá mới";
+            Size = new Size(440, 460);
+            MinimumSize = new Size(400, 420);
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            BackColor = Color.White;
+            Font = new Font("Segoe UI", 10F);
+
+            BuildUI();
+        }
+
+        private void BuildUI()
+        {
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                RowCount = 7,
+                ColumnCount = 2,
+                Padding = new Padding(24, 20, 24, 12)
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54));
+            for (int i = 0; i < 7; i++)
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+
+            var lblHeader = new Label
+            {
+                Text = "Tạo bảng giá mới",
+                Font = new Font("Segoe UI", 11, FontStyle.Bold),
+                ForeColor = Blue,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            layout.Controls.Add(lblHeader, 0, 0);
+            layout.SetColumnSpan(lblHeader, 2);
+
+            // Vehicle type
+            var lblType = new Label
+            {
+                Text = "Loại xe:",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleRight,
+                ForeColor = Color.FromArgb(70, 70, 70)
+            };
+            _cmbVehicleType = new ComboBox
+            {
+                Dock = DockStyle.Fill,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font = new Font("Segoe UI", 10.5f)
+            };
+            _cmbVehicleType.Items.AddRange(Enum.GetValues(typeof(VehicleType))
+                .Cast<object>().ToArray());
+            _cmbVehicleType.SelectedIndex = 0;
+
+            layout.Controls.Add(lblType, 0, 1);
+            layout.Controls.Add(_cmbVehicleType, 1, 1);
+
+            _numBaseFare = AddNumRow(layout, "Giá mở cửa (đ):", 2, 10000, 0, 500_000);
+            _numPricePerKm = AddNumRow(layout, "Giá / km (đ):", 3, 5000, 0, 100_000);
+            _numMinimumFare = AddNumRow(layout, "Giá tối thiểu (đ):", 4, 10000, 0, 500_000);
+            _numCommission = AddNumRow(layout, "Hoa hồng (%):", 5, 20, 0, 100, decimalPlaces: 0);
+
+            var btnPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.RightToLeft,
+                Padding = new Padding(0, 6, 0, 0)
+            };
+
+            var btnCancel = new Button
+            {
+                Text = "Hủy",
+                Width = 90,
+                Height = 34,
+                DialogResult = DialogResult.Cancel,
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 10)
+            };
+            btnCancel.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
+
+            var btnSave = new Button
+            {
+                Text = "Lưu",
+                Width = 90,
+                Height = 34,
+                BackColor = Green,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 10, FontStyle.Bold)
+            };
+            btnSave.FlatAppearance.BorderSize = 0;
+            btnSave.Click += OnSaveClicked;
+
+            btnPanel.Controls.Add(btnCancel);
+            btnPanel.Controls.Add(btnSave);
+
+            layout.Controls.Add(btnPanel, 0, 6);
+            layout.SetColumnSpan(btnPanel, 2);
+
+            Controls.Add(layout);
+            AcceptButton = btnSave;
+            CancelButton = btnCancel;
+        }
+
+        private void OnSaveClicked(object? sender, EventArgs e)
+        {
+            decimal baseFare = _numBaseFare.Value;
+            decimal perKm = _numPricePerKm.Value;
+            decimal minFare = _numMinimumFare.Value;
+            decimal commission = _numCommission.Value / 100m;
+
+            if (minFare < baseFare)
+            {
+                MessageBox.Show("Giá tối thiểu không được thấp hơn giá mở cửa.",
+                    "Không hợp lệ", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                _numMinimumFare.Focus();
+                return;
+            }
+
+            NewVehicleType = (VehicleType)_cmbVehicleType.SelectedItem!;
+            NewBaseFare = baseFare;
+            NewPricePerKm = perKm;
+            NewMinimumFare = minFare;
+            NewCommissionRate = commission;
+
+            DialogResult = DialogResult.OK;
+        }
+
+        private static NumericUpDown AddNumRow(
+            TableLayoutPanel layout,
+            string labelText,
+            int row,
+            decimal value,
+            decimal min,
+            decimal max,
+            int decimalPlaces = 0)
+        {
+            var lbl = new Label
+            {
+                Text = labelText,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleRight,
+                ForeColor = Color.FromArgb(70, 70, 70)
+            };
+
+            var num = new NumericUpDown
+            {
+                Dock = DockStyle.Fill,
+                Minimum = min,
+                Maximum = max,
+                Value = Math.Clamp(value, min, max),
+                DecimalPlaces = decimalPlaces,
+                ThousandsSeparator = decimalPlaces == 0,
+                Font = new Font("Segoe UI", 10.5f)
+            };
+
+            layout.Controls.Add(lbl, 0, row);
+            layout.Controls.Add(num, 1, row);
+            return num;
+        }
+    }
 }
-
-

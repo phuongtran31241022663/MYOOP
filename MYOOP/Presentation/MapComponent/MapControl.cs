@@ -72,6 +72,9 @@ namespace OOP.Presentation.Map
         // ── Events ────────────────────────────────────────────────────────────
         public event Action<PointLatLng, string, bool>? LocationSelected;
         private Func<bool>? _isPickupSelector;
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public bool AllowLeftClickSelect { get; set; } = false;
 
         public void SetPickupSelector(Func<bool> selector)
         {
@@ -259,7 +262,7 @@ namespace OOP.Presentation.Map
             {
                 wasDragging = dragging;
                 dragging = false;
-                if (!wasDragging)
+                if (!wasDragging && AllowLeftClickSelect)
                     _ = HandleLeftClickAsync(e.X, e.Y);
                 return;
             }
@@ -429,6 +432,60 @@ namespace OOP.Presentation.Map
         {
             if (InvokeRequired) { BeginInvoke(() => UpdateDriverLocation(driverId, pos)); return; }
             AnimateDriverMarker(driverId, pos);
+        }
+
+        public void UpdateNearbyDrivers(IEnumerable<Driver> drivers)
+        {
+            if (InvokeRequired) { BeginInvoke(() => UpdateNearbyDrivers(drivers)); return; }
+
+            var idSet = new HashSet<string>(drivers.Select(d => d.Id.ToString()));
+
+            foreach (var key in driverMarkers.Keys.ToList())
+            {
+                if (idSet.Contains(key)) continue;
+
+                if (animationTimers.TryGetValue(key, out var timer))
+                {
+                    timer.Stop();
+                    timer.Dispose();
+                    animationTimers.Remove(key);
+                }
+
+                if (driverMarkers.TryGetValue(key, out var marker))
+                {
+                    driverOverlay.Markers.Remove(marker);
+                    driverMarkers.Remove(key);
+                }
+            }
+
+            foreach (var driver in drivers)
+            {
+                if (driver.CurrentLocation == null) continue;
+                string key = driver.Id.ToString();
+                string tooltip = $"Tài xế: {driver.Name}\n" +
+                                 $"Xe: {driver.Vehicle.Type}\n" +
+                                 $"⭐ {driver.AverageRating:F1}";
+
+                if (!driverMarkers.ContainsKey(key))
+                {
+                    var marker = new GMarkerGoogle(
+                        new PointLatLng(driver.CurrentLocation.Lat, driver.CurrentLocation.Lng),
+                        GMarkerGoogleType.blue_dot)
+                    {
+                        ToolTipText = tooltip,
+                        ToolTipMode = MarkerTooltipMode.OnMouseOver
+                    };
+                    driverMarkers[key] = marker;
+                    driverOverlay.Markers.Add(marker);
+                }
+                else
+                {
+                    driverMarkers[key].ToolTipText = tooltip;
+                }
+
+                UpdateDriverLocation(driver.Id,
+                    new PointLatLng(driver.CurrentLocation.Lat, driver.CurrentLocation.Lng));
+            }
         }
 
         private void AnimateDriverMarker(Guid id, PointLatLng endPos)

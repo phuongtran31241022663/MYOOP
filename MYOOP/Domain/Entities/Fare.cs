@@ -48,9 +48,6 @@ namespace OOP.Domain.Entities
             if (distanceKm < 0)
                 throw new ArgumentException("Khoảng cách không thể âm.", nameof(distanceKm));
 
-            if (distanceKm < 0.5)
-                return MinimumFare;
-
             decimal total = BaseFare + ((decimal)distanceKm * PricePerKm);
 
             decimal fare = Math.Max(total, MinimumFare);

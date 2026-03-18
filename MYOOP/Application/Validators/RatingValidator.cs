@@ -10,10 +10,13 @@ namespace OOP.Application.Validators
             if (score < 1 || score > 5)
                 throw new ArgumentException("Điểm đánh giá phải từ 1 đến 5 sao.");
 
-            if (score < 3 && string.IsNullOrWhiteSpace(comment))
-                throw new ArgumentException("Vui lòng để lại góp ý khi đánh giá dưới 3 sao.");
-            if (comment.Length < 5)
-                throw new ArgumentException("Góp ý của bạn quá ngắn. Vui lòng mô tả chi tiết hơn.");
+            if (score < 3)
+            {
+                if (string.IsNullOrWhiteSpace(comment))
+                    throw new ArgumentException("Vui lòng để lại góp ý khi đánh giá dưới 3 sao.");
+                if (comment.Trim().Length < 5)
+                    throw new ArgumentException("Góp ý của bạn quá ngắn. Vui lòng mô tả chi tiết hơn.");
+            }
         }
 
         public static void ValidateTripForRating(Trip trip)

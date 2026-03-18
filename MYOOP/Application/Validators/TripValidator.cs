@@ -37,9 +37,12 @@ namespace OOP.Application.Validators
 
             if (trip.Status == TripStatus.Cancelled)
                 throw new InvalidOperationException("Chuyến đã được hủy trước đó.");
+
+            if (trip.Status == TripStatus.Timeout)
+                throw new InvalidOperationException("Chuyến đã hết thời gian tìm tài xế.");
         }
 
-        // Gọi trước khi bắt đầu chuyến (Arrived → Ongoing)
+        // Gọi trước khi bắt đầu chuyến (Arrived → Started)
         public static void ValidateStart(Trip trip)
         {
             if (trip == null)
@@ -53,13 +56,13 @@ namespace OOP.Application.Validators
                 throw new InvalidOperationException("Chuyến chưa được gán tài xế.");
         }
 
-        // Gọi trước khi hoàn thành chuyến (Ongoing → Completed)
+        // Gọi trước khi hoàn thành chuyến (Started → Completed)
         public static void ValidateCompletion(Trip trip, double distance, decimal fare)
         {
             if (trip == null)
                 throw new ArgumentNullException(nameof(trip));
 
-            if (trip.Status != TripStatus.Ongoing)
+            if (trip.Status != TripStatus.Started)
                 throw new InvalidOperationException(
                     $"Không thể hoàn thành chuyến khi trạng thái là '{trip.Status}'. Chuyến phải đang chạy.");
             if (distance <= 0) throw new ArgumentException("Khoảng cách không hợp lệ.");
@@ -75,7 +78,7 @@ namespace OOP.Application.Validators
             if (driver == null)
                 throw new ArgumentNullException(nameof(driver));
 
-            if (trip.Status != TripStatus.Requested)
+            if (trip.Status != TripStatus.Requested && trip.Status != TripStatus.Searching)
                 throw new InvalidOperationException(
                     $"Không thể gán tài xế khi trip đang ở trạng thái '{trip.Status}'.");
 

@@ -5,6 +5,7 @@ using OOP.Domain.Entities;
 using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
 using OOP.Presentation.Map;
+using OOP.Presentation.CoreForms;
 using static OOP.Presentation.AppTheme;
 using static OOP.Presentation.FormHelper;
 
@@ -16,6 +17,7 @@ namespace OOP.Presentation
         private readonly IUserRepository _userRepo;
         private readonly ITripService _tripService;
         private readonly IRatingService _ratingService;
+        private readonly IUserService _userService;
         private readonly INotificationService _notification;
         private readonly Func<Passenger, ITripService, Form> _requestTripFormFactory;
         private readonly Func<Passenger, ITripService, Form> _tripHistoryFormFactory;
@@ -50,6 +52,7 @@ namespace OOP.Presentation
             IUserRepository userRepo,
             ITripService tripService,
             IRatingService ratingService,
+            IUserService userService,
             INotificationService notification,
             Func<Passenger, ITripService, Form> requestTripFormFactory,
             Func<Passenger, ITripService, Form> tripHistoryFormFactory,
@@ -59,6 +62,7 @@ namespace OOP.Presentation
             _userRepo = userRepo;
             _tripService = tripService ?? throw new ArgumentNullException(nameof(tripService));
             _ratingService = ratingService ?? throw new ArgumentNullException(nameof(ratingService));
+            _userService = userService ?? throw new ArgumentNullException(nameof(userService));
             _requestTripFormFactory = requestTripFormFactory ?? throw new ArgumentNullException(nameof(requestTripFormFactory));
             _tripHistoryFormFactory = tripHistoryFormFactory ?? throw new ArgumentNullException(nameof(tripHistoryFormFactory));
             _ratingFormFactory = ratingFormFactory ?? throw new ArgumentNullException(nameof(ratingFormFactory));
@@ -113,21 +117,25 @@ namespace OOP.Presentation
             _lblStatus.Text = trip.Status switch
             {
                 TripStatus.Requested => "⏳  Đang tìm tài xế...",
+                TripStatus.Searching => "🔎  Đang tìm tài xế...",
                 TripStatus.Matched => "🚗  Tài xế đang đến đón bạn",
                 TripStatus.Arrived => "📍  Tài xế đã đến điểm đón",
-                TripStatus.Ongoing => "🛣️  Chuyến đi đang diễn ra",
+                TripStatus.Started => "🛣️  Chuyến đi đang diễn ra",
                 TripStatus.Completed => "✅  Chuyến đi hoàn thành",
                 TripStatus.Cancelled => "❌  Chuyến đi đã bị hủy",
+                TripStatus.Timeout => "⌛  Hết thời gian tìm tài xế",
                 _ => trip.Status.ToString()
             };
 
             bool canCancel = trip.Status == TripStatus.Requested
+                          || trip.Status == TripStatus.Searching
                           || trip.Status == TripStatus.Matched;
             _btnCancel.Enabled = canCancel;
 
             // Hide strip when trip is finished
             bool finished = trip.Status == TripStatus.Completed
-                         || trip.Status == TripStatus.Cancelled;
+                         || trip.Status == TripStatus.Cancelled
+                         || trip.Status == TripStatus.Timeout;
             if (finished)
             {
                 _pnlTripStatus.Visible = false;
@@ -290,6 +298,13 @@ namespace OOP.Presentation
                 OpenChildForm(_tripHistoryFormFactory(_passenger, _tripService));
             y += 58;
 
+            var btnProfile = MakeMenuBtn(
+                "👤  Thông tin cá nhân", "Cập nhật họ tên và số điện thoại",
+                AppTheme.Accent, AppTheme.AccentHover, height: 48);
+            FormHelper.Place(btnProfile, card, 24, y, card.Width - 48, 48);
+            btnProfile.Click += (_, _) => OpenChildForm(new ProfileForm(_passenger, _userService));
+            y += 58;
+
             var btnRating = MakeMenuBtn(
                 "⭐  Đánh giá tài xế", "Đánh giá chuyến đi vừa hoàn thành",
                 AppTheme.Warning, AppTheme.WarningHover, height: 48);
@@ -327,7 +342,7 @@ namespace OOP.Presentation
         // ── Helpers ───────────────────────────────────────────────────────────
 
         /// <summary>
-        /// After RequestTripForm closes, scan for a Requested/Matched/Arrived/Ongoing
+        /// After RequestTripForm closes, scan for a Requested/Matched/Arrived/Started
         /// trip belonging to this passenger and start showing the status strip.
         /// </summary>
         private async Task SyncActiveTripAsync()
@@ -338,7 +353,8 @@ namespace OOP.Presentation
                 var active = history.FirstOrDefault(t =>
                     t.PassengerId == _passenger.Id &&
                     t.Status != TripStatus.Completed &&
-                    t.Status != TripStatus.Cancelled);
+                    t.Status != TripStatus.Cancelled &&
+                    t.Status != TripStatus.Timeout);
 
                 if (active != null)
                     _currentTripId = active.Id;
@@ -367,6 +383,7 @@ namespace OOP.Presentation
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+
 
         private void OpenChildForm(Form childForm)
         {

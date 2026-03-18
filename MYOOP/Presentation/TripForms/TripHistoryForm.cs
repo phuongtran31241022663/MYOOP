@@ -1,4 +1,5 @@
 ﻿using OOP.Application.Services.Interfaces;
+using OOP.Domain.Interfaces;
 using OOP.Presentation;
 
 namespace OOP.Presentation.TripForms
@@ -7,16 +8,18 @@ namespace OOP.Presentation.TripForms
     {
         private readonly Guid _userId;
         private readonly ITripService _tripService;
+        private readonly IUserRepository _userRepo;
 
         private DataGridView _dgvTrips = null!;
         private Label LabelEmpty = null!;
         private Button ButtonRefresh = null!;
         private Button ButtonBack = null!;
 
-        public TripHistoryForm(Guid userId, ITripService tripService)
+        public TripHistoryForm(Guid userId, ITripService tripService, IUserRepository userRepo)
         {
             _userId = userId;
             _tripService = tripService;
+            _userRepo = userRepo;
             InitForm();
             BuildUI();
             Load += async (_, _) => await LoadTrips();
@@ -54,6 +57,7 @@ namespace OOP.Presentation.TripForms
                 MakeCol("TripId", "ID", 80),
                 MakeCol("Pickup", "Điểm đón", 220),
                 MakeCol("Destination", "Điểm đến", 220),
+                MakeCol("Driver", "Tài xế", 140),
                 MakeCol("Distance", "Khoảng cách", 100),
                 MakeCol("Fare", "Cước phí", 110),
                 MakeCol("Status", "Trạng thái", 130),
@@ -130,10 +134,18 @@ namespace OOP.Presentation.TripForms
                 _dgvTrips.Rows.Clear();
                 foreach (var t in trips)
                 {
+                    string driverName = "Chưa có";
+                    if (t.DriverId.HasValue)
+                    {
+                        var u = await _userRepo.GetById(t.DriverId.Value);
+                        driverName = u?.Name ?? t.DriverId.Value.ToString()[..8];
+                    }
+
                     _dgvTrips.Rows.Add(
                         t.Id.ToString()[..8],
                         t.PickupLocation?.Address ?? "–",
                         t.DestinationLocation?.Address ?? "–",
+                        driverName,
                         $"{t.Distance:F2} km",
                         t.Fare > 0 ? $"{t.Fare:N0} VNĐ" : "–",
                         StatusLabel(t.Status),
@@ -145,6 +157,7 @@ namespace OOP.Presentation.TripForms
                     {
                         OOP.Domain.Enums.TripStatus.Completed => Color.FromArgb(20, 120, 60),
                         OOP.Domain.Enums.TripStatus.Cancelled => Color.FromArgb(160, 50, 50),
+                        OOP.Domain.Enums.TripStatus.Timeout => Color.FromArgb(180, 120, 30),
                         _ => Color.FromArgb(40, 40, 40)
                     };
                 }
@@ -173,12 +186,15 @@ namespace OOP.Presentation.TripForms
         private static string StatusLabel(OOP.Domain.Enums.TripStatus status) => status switch
         {
             OOP.Domain.Enums.TripStatus.Requested => "⏳ Đang tìm",
+            OOP.Domain.Enums.TripStatus.Searching => "🔎 Đang tìm",
             OOP.Domain.Enums.TripStatus.Matched => "🤝 Đã ghép",
             OOP.Domain.Enums.TripStatus.Arrived => "📍 Đã đến",
-            OOP.Domain.Enums.TripStatus.Ongoing => "🚗 Đang chạy",
+            OOP.Domain.Enums.TripStatus.Started => "🚗 Đang chạy",
             OOP.Domain.Enums.TripStatus.Completed => "✅ Hoàn thành",
             OOP.Domain.Enums.TripStatus.Cancelled => "❌ Đã hủy",
+            OOP.Domain.Enums.TripStatus.Timeout => "⌛ Hết thời gian",
             _ => status.ToString()
         };
     }
 }
+

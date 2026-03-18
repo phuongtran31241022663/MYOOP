@@ -1,16 +1,12 @@
-﻿﻿using OOP.Domain.Entities;
-
-namespace OOP.Application.Interfaces
+namespace OOP.Application.Services.Interfaces
 {
     public interface ISimulationService
     {
-        // Cập nhật vị trí tất cả tài xế đang Available/Busy
+        Task SimulateDriverToPickup(Guid tripId);
+        Task SimulateTripToDestination(Guid tripId);
+        Task Tick();
+        Task StopSimulation(Guid tripId);
         Task UpdateDriverLocations();
-
-        // Di chuyển ngẫu nhiên một tài xế theo bước nhỏ
-        Task SimulateDriverMovement(Guid driverId);
-
-        // Tự động tiến trình một trip đang Ongoing
         Task SimulateTripProgress(Guid tripId);
     }
 }

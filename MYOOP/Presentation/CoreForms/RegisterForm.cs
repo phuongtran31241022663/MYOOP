@@ -1,5 +1,4 @@
-﻿using OOP.Application.Interfaces;
-using OOP.Application.Services.Interfaces;
+﻿using OOP.Application.Services.Interfaces;
 using OOP.Application.Validators;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
@@ -630,3 +629,4 @@ namespace OOP.Presentation
         }
     }
 }
+

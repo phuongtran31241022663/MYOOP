@@ -69,7 +69,7 @@ namespace OOP
                     await tripNotificationSubscriber.Handle(tripId, message);
 
             var matchingService = new DriverMatchingService(userRepo, routeService);
-            var adminService = new AdminService(userRepo, tripRepo, fareRepo);
+            var adminService = new AdminService(userRepo, tripRepo, fareRepo, paymentRepo);
             var ratingService = new RatingService(ratingRepo, userRepo, tripRepo);
             ITripService tripService = new TripService(
               tripRepo,
@@ -94,7 +94,7 @@ namespace OOP
                 new RequestTripForm(p.Id, s, routeService, fareRuleService, httpClient);
 
             Func<Passenger, ITripService, Form> tripHistoryFactory = (p, s) =>
-                new TripHistoryForm(p.Id, s);
+                new TripHistoryForm(p.Id, s, userRepo);
 
             Func<Passenger, IRatingService, ITripService, Form> ratingFormFactory = (p, r, s) =>
                 new RatingForm(p, r, s);
@@ -105,6 +105,7 @@ namespace OOP
                     userRepo,
                     tripService,
                     ratingService,
+                    userService,
                     notificationService,
                     requestTripFactory,
                     tripHistoryFactory,
@@ -112,7 +113,7 @@ namespace OOP
                 );
 
             Func<Driver, Form> driverDashboardFactory = d =>
-                new DriverDashboardForm(d, tripService, userService, routeService, notificationService);
+                new DriverDashboardForm(d, tripService, userService, userRepo, routeService, notificationService);
 
             Func<Admin, Form> adminDashboardFactory = a =>
                 new AdminDashboardForm(a, adminService);
@@ -132,19 +133,21 @@ namespace OOP
                 {
                     if (!SimulationConfig.Enabled) return;
                     await simulationService.UpdateDriverLocations();
-                    var trips = await tripRepo.GetAll();
-                    var active = trips
-                        .Where(t => t.DriverId.HasValue &&
-                                    (t.Status == TripStatus.Matched ||
-                                     t.Status == TripStatus.Arrived ||
-                                     t.Status == TripStatus.Ongoing))
-                        .ToList();
-                    foreach (var t in active)
-                        await simulationService.SimulateTripProgress(t.Id);
                 }
                 catch { }
             };
             simulationTimer.Start();
+
+            var timeoutTimer = new System.Windows.Forms.Timer { Interval = 5000 };
+            timeoutTimer.Tick += async (_, _) =>
+            {
+                try
+                {
+                    await tripService.ExpireSearchingTrips(TripTimeoutConfig.SearchTimeout);
+                }
+                catch { }
+            };
+            timeoutTimer.Start();
 
             System.Windows.Forms.Application.Run(
                 new MainForm(
@@ -158,6 +161,12 @@ namespace OOP
         internal static class SimulationConfig
         {
             public static bool Enabled { get; set; } = true;
+        }
+
+        internal static class TripTimeoutConfig
+        {
+            // Demo timeout for searching trips
+            public static TimeSpan SearchTimeout { get; set; } = TimeSpan.FromSeconds(60);
         }
 
         private static async Task SeedData(

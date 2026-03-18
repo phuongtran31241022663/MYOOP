@@ -63,11 +63,24 @@ namespace OOP.Application.Services
 
             // 3. Khởi tạo Trip với estimatedDistance mới có
             var trip = new Trip(passengerId, rule.Id, pickup, destination, vehicleType, estimatedDistance);
+            // 4. Khóa giá ngay tại thời điểm đặt (không thay đổi về sau)
+            var estimatedFare = rule.CalculateFare(estimatedDistance);
+            trip.ApplyFare(estimatedFare);
+            trip.MarkSearching();
 
             await _tripRepo.Add(trip);
 
             await _notificationService.NotifyPassenger(
                 passengerId, $"Yêu cầu đặt xe đã được ghi nhận. Quãng đường dự kiến: {estimatedDistance:N2} km.");
+
+            // 5. Tìm tài xế phù hợp gần nhất và gửi yêu cầu
+            var bestDriver = await _matchingService.FindAvailableDriver(pickup, vehicleType, trip.RejectedDriverIds);
+            if (bestDriver != null)
+            {
+                await _notificationService.NotifyDriver(
+                    bestDriver.Id,
+                    $"Bạn có yêu cầu mới: {pickup.Address} → {destination.Address} (Ước tính {estimatedFare:N0} VNĐ)");
+            }
 
             return trip;
         }
@@ -88,6 +101,35 @@ namespace OOP.Application.Services
 
             await _notificationService.NotifyTripUpdate(
                 tripId, $"Tài xế {driver.Name} đã nhận chuyến của bạn.");
+        }
+
+        public async Task RejectTrip(Guid tripId, Guid driverId, string reason)
+        {
+            if (driverId == Guid.Empty)
+                throw new ArgumentException("DriverId không hợp lệ.", nameof(driverId));
+
+            var trip = await GetTripOrThrow(tripId);
+            if (trip.Status != TripStatus.Requested && trip.Status != TripStatus.Searching)
+                throw new InvalidOperationException("Chỉ có thể từ chối khi trip đang ở trạng thái Requested/Searching.");
+
+            if (trip.Status == TripStatus.Requested)
+                trip.MarkSearching();
+
+            trip.AddRejectedDriver(driverId);
+            await _tripRepo.Update(trip);
+
+            await _notificationService.NotifyTripUpdate(
+                tripId, $"Tài xế đã từ chối chuyến. Đang tìm tài xế khác... ({reason})");
+
+            var nextDriver = await _matchingService.FindAvailableDriver(
+                trip.PickupLocation, trip.VehicleType, trip.RejectedDriverIds);
+
+            if (nextDriver != null)
+            {
+                await _notificationService.NotifyDriver(
+                    nextDriver.Id,
+                    $"Bạn có yêu cầu mới: {trip.PickupLocation.Address} → {trip.DestinationLocation.Address} (Ước tính {trip.Fare:N0} VNĐ)");
+            }
         }
 
         // --- 3. Tài xế đến nơi đón ---
@@ -132,7 +174,8 @@ namespace OOP.Application.Services
                 trip.ApplyDistance(route?.Distance ?? 0);
             }
 
-            await _fareService.CalculateFare(trip);
+            if (trip.Fare <= 0)
+                await _fareService.CalculateFare(trip);
 
             trip.CompleteTrip(trip.Distance, duration, trip.Fare);
 
@@ -145,7 +188,9 @@ namespace OOP.Application.Services
             if (trip.DriverId.HasValue)
             {
                 var driver = await GetDriverOrThrow(trip.DriverId.Value);
-                driver.TopUpWallet(payment.DriverIncome);
+                // Cash payment: tài xế nhận đủ tiền mặt, sau đó trừ hoa hồng
+                driver.TopUpWallet(trip.Fare);
+                driver.PayCommission(trip.Fare, payment.Commission);
                 driver.AddTrip();
                 driver.SetAvailable();
                 await _userRepo.Update(driver);
@@ -207,10 +252,61 @@ namespace OOP.Application.Services
 
             var trips = await _tripRepo.GetAll();
             return trips
-                .Where(t => t.Status == TripStatus.Requested &&
-                            t.VehicleType == driver.Vehicle.Type)
+                .Where(t => (t.Status == TripStatus.Requested || t.Status == TripStatus.Searching) &&
+                            t.VehicleType == driver.Vehicle.Type &&
+                            !t.RejectedDriverIds.Contains(driver.Id))
                 .OrderBy(t => t.RequestedAt)
                 .ToList();
+        }
+
+        public async Task<List<Driver>> GetNearbyDrivers(
+            Location pickup,
+            VehicleType vehicleType,
+            double maxKm)
+        {
+            return await _matchingService.GetNearbyDrivers(pickup, vehicleType, maxKm);
+        }
+
+        public async Task<Driver?> GetDriverForTrip(Guid tripId)
+        {
+            var trip = await _tripRepo.GetById(tripId);
+            if (trip == null || !trip.DriverId.HasValue) return null;
+
+            var user = await _userRepo.GetById(trip.DriverId.Value);
+            return user as Driver;
+        }
+
+        public async Task<int> ExpireSearchingTrips(TimeSpan maxWait)
+        {
+            if (maxWait <= TimeSpan.Zero)
+                throw new ArgumentException("Thời gian chờ phải lớn hơn 0.", nameof(maxWait));
+
+            var now = DateTime.UtcNow;
+            var trips = await _tripRepo.GetAll();
+
+            var expired = trips
+                .Where(t =>
+                    (t.Status == TripStatus.Searching || t.Status == TripStatus.Requested) &&
+                    !t.DriverId.HasValue &&
+                    (now - t.RequestedAt) >= maxWait)
+                .ToList();
+
+            foreach (var t in expired)
+            {
+                try
+                {
+                    t.TimeoutTrip();
+                    await _tripRepo.Update(t);
+                    await _notificationService.NotifyTripUpdate(
+                        t.Id, "Không có tài xế nhận. Yêu cầu đã hết thời gian.");
+                }
+                catch
+                {
+                    // ignore per-trip errors to avoid blocking other expirations
+                }
+            }
+
+            return expired.Count;
         }
 
         public async Task<List<Trip>> GetByUserId(Guid id)

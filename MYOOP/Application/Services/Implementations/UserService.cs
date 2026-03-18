@@ -25,7 +25,15 @@ namespace OOP.Application.Services
         public async Task UpdateUserProfile(Guid userId, string name, string phone)
         {
             var user = await GetOrThrow(userId);
-            user.UpdateProfile(name, phone);
+            var trimmedPhone = phone.Trim();
+
+            if (!string.Equals(user.Phone, trimmedPhone, StringComparison.OrdinalIgnoreCase))
+            {
+                if (await _userRepo.ExistsByPhone(trimmedPhone))
+                    throw new InvalidOperationException($"Số điện thoại '{trimmedPhone}' đã được đăng ký.");
+            }
+
+            user.UpdateProfile(name, trimmedPhone);
             UserValidator.ValidateUserUpdate(user);
             await _userRepo.Update(user);
         }
@@ -44,6 +52,18 @@ namespace OOP.Application.Services
             var user = await GetOrThrow(userId);
             user.Deactivate();
             await _userRepo.Update(user);
+        }
+
+        public async Task UpdateDriverLocation(Guid driverId, Location location)
+        {
+            if (location == null) throw new ArgumentNullException(nameof(location));
+
+            var user = await GetOrThrow(driverId);
+            if (user is not Driver driver)
+                throw new InvalidOperationException("User không phải là Driver.");
+
+            driver.UpdateLocation(location);
+            await _userRepo.Update(driver);
         }
 
         // --- Helpers ---

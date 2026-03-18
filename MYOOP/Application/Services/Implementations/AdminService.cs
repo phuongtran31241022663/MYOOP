@@ -1,7 +1,9 @@
-﻿﻿using OOP.Application.Services.Interfaces;
+using OOP.Application.Services.Interfaces;
+using OOP.Application.Services.Models;
 using OOP.Application.Validators;
 using OOP.Domain.Entities;
 using OOP.Domain.Interfaces;
+using OOP.Domain.Enums;
 
 namespace OOP.Application.Services
 {
@@ -10,15 +12,18 @@ namespace OOP.Application.Services
         private readonly IUserRepository _userRepo;
         private readonly ITripRepository _tripRepo;
         private readonly IFareRuleRepository _fareRuleRepo;
+        private readonly IPaymentRepository _paymentRepo;
 
         public AdminService(
             IUserRepository userRepo,
             ITripRepository tripRepo,
-            IFareRuleRepository fareRuleRepo)
+            IFareRuleRepository fareRuleRepo,
+            IPaymentRepository paymentRepo)
         {
             _userRepo = userRepo ?? throw new ArgumentNullException(nameof(userRepo));
             _tripRepo = tripRepo ?? throw new ArgumentNullException(nameof(tripRepo));
             _fareRuleRepo = fareRuleRepo ?? throw new ArgumentNullException(nameof(fareRuleRepo));
+            _paymentRepo = paymentRepo ?? throw new ArgumentNullException(nameof(paymentRepo));
         }
 
         public async Task<List<User>> GetAllUsers()
@@ -34,6 +39,15 @@ namespace OOP.Application.Services
         public async Task<List<Fare>> GetFareRules()
         {
             return await _fareRuleRepo.GetAll();
+        }
+
+        public async Task<Fare> CreateFareRule(Fare rule)
+        {
+            if (rule == null) throw new ArgumentNullException(nameof(rule));
+
+            FareRuleValidator.ValidateRule(rule);
+            await _fareRuleRepo.Add(rule);
+            return rule;
         }
 
         public async Task UpdateFareRule(Fare rule)
@@ -71,6 +85,28 @@ namespace OOP.Application.Services
             var user = await GetOrThrow(userId);
             user.Activate();
             await _userRepo.Update(user);
+        }
+
+        public async Task<TripReport> GetTripReport()
+        {
+            var trips = await _tripRepo.GetAll();
+            var payments = await _paymentRepo.GetAll();
+
+            int totalTrips = trips.Count;
+            decimal totalRevenue = trips
+                .Where(t => t.Status == TripStatus.Completed)
+                .Sum(t => t.Fare);
+
+            decimal totalCommission = payments.Sum(p => p.Commission);
+            decimal totalDriverIncome = payments.Sum(p => p.DriverIncome);
+
+            return new TripReport
+            {
+                TotalTrips = totalTrips,
+                TotalRevenue = totalRevenue,
+                TotalCommission = totalCommission,
+                TotalDriverIncome = totalDriverIncome
+            };
         }
 
         // --- Helpers ---

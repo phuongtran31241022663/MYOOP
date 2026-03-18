@@ -43,7 +43,7 @@ namespace OOP.Infrastructure.Repositories
                 vehicleType: VehicleType.Motorbike,
                 baseFare: 10000m,      // Giá mở cửa 10k
                 pricePerKm: 5000m,     // 5k mỗi km
-                minimumFare: 10000m,   // Giá sàn 10k (khớp với logic < 0.5km)
+                minimumFare: 10000m,   // Giá sàn 10k
                 commissionRate: DefaultCommission));
 
             // Car: Rẻ nhưng cao hơn xe máy

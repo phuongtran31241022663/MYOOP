@@ -35,8 +35,10 @@ namespace OOP.Domain.Entities
         [DataMember] public DateTime? StartedAt { get; private set; }
         [DataMember] public DateTime? CompletedAt { get; private set; }
         [DataMember] public DateTime? CancelledAt { get; private set; }
+        [DataMember] public DateTime? TimedOutAt { get; private set; }
 
         [DataMember] public bool IsRated { get; private set; } = false;
+        [DataMember] public List<Guid> RejectedDriverIds { get; private set; } = new();
 
         protected Trip() { }
 
@@ -69,12 +71,22 @@ namespace OOP.Domain.Entities
 
         // ── Thay đổi trạng thái ───────────────────────────────────────────────
 
-        // Requested → Matched
-        public void AssignDriver(Guid driverId)
+        // Requested → Searching
+        public void MarkSearching()
         {
             if (Status != TripStatus.Requested)
                 throw new InvalidOperationException(
-                    "Chỉ có thể assign driver khi trip đang ở trạng thái Requested.");
+                    "Chỉ có thể chuyển sang Searching khi trip đang ở trạng thái Requested.");
+
+            Status = TripStatus.Searching;
+        }
+
+        // Requested → Matched
+        public void AssignDriver(Guid driverId)
+        {
+            if (Status != TripStatus.Requested && Status != TripStatus.Searching)
+                throw new InvalidOperationException(
+                    "Chỉ có thể assign driver khi trip đang ở trạng thái Requested/Searching.");
 
             if (driverId == Guid.Empty)
                 throw new ArgumentException("DriverId không hợp lệ.", nameof(driverId));
@@ -95,16 +107,16 @@ namespace OOP.Domain.Entities
             ArrivedAt = DateTime.UtcNow;   
         }
 
-        // Arrived → Ongoing
+        // Arrived → Started
         public void StartTrip()
         {
             TripValidator.ValidateStart(this);
 
-            Status = TripStatus.Ongoing;
+            Status = TripStatus.Started;
             StartedAt = DateTime.UtcNow;   
         }
 
-        // Ongoing → Completed
+        // Started → Completed
         public void CompleteTrip(double distance, double duration, decimal fare)
         {
             TripValidator.ValidateCompletion(this, distance, fare);
@@ -127,6 +139,17 @@ namespace OOP.Domain.Entities
             CancelReason = reason;
             Status = TripStatus.Cancelled;
             CancelledAt = DateTime.UtcNow;   
+        }
+
+        // Searching/Requested → Timeout
+        public void TimeoutTrip()
+        {
+            if (Status != TripStatus.Searching && Status != TripStatus.Requested)
+                throw new InvalidOperationException(
+                    "Chỉ có thể timeout khi trip đang ở trạng thái Requested/Searching.");
+
+            Status = TripStatus.Timeout;
+            TimedOutAt = DateTime.UtcNow;
         }
 
         // ── Ghi nhận kết quả trước khi hoàn thành ────────────────────────────
@@ -163,7 +186,9 @@ namespace OOP.Domain.Entities
 
         private void EnsureNotFinished(string callerName)
         {
-            if (Status == TripStatus.Completed || Status == TripStatus.Cancelled)
+            if (Status == TripStatus.Completed
+                || Status == TripStatus.Cancelled
+                || Status == TripStatus.Timeout)
                 throw new InvalidOperationException(
                     $"{callerName} không thể gọi trên chuyến đi đã kết thúc (Status: {Status}).");
         }
@@ -178,6 +203,15 @@ namespace OOP.Domain.Entities
                 throw new InvalidOperationException("Chuyến đi này đã được đánh giá rồi.");
 
             IsRated = true;
+        }
+
+        public void AddRejectedDriver(Guid driverId)
+        {
+            if (driverId == Guid.Empty)
+                throw new ArgumentException("DriverId không hợp lệ.", nameof(driverId));
+
+            if (!RejectedDriverIds.Contains(driverId))
+                RejectedDriverIds.Add(driverId);
         }
 
         public override string ToString() =>

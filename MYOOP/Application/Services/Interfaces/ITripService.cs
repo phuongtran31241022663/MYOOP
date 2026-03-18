@@ -12,6 +12,7 @@ namespace OOP.Application.Services.Interfaces
             VehicleType vehicleType);
 
         Task AssignDriver(Guid tripId, Guid driverId);
+        Task RejectTrip(Guid tripId, Guid driverId, string reason);
         Task MarkArrived(Guid tripId);
         Task StartTrip(Guid tripId);
         Task CompleteTrip(Guid tripId);
@@ -19,6 +20,9 @@ namespace OOP.Application.Services.Interfaces
         Task<Trip?> GetTrip(Guid tripId);
         Task<List<Trip>> GetTripHistory(Guid userId);
         Task<List<Trip>> GetAvailableTripsForDriver(Guid driverId);
+        Task<List<Driver>> GetNearbyDrivers(Location pickup, VehicleType vehicleType, double maxKm);
+        Task<Driver?> GetDriverForTrip(Guid tripId);
+        Task<int> ExpireSearchingTrips(TimeSpan maxWait);
     }
 
 }

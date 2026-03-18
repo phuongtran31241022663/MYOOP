@@ -9,6 +9,7 @@ namespace OOP.Application.Services.Interfaces
         Task<User?> GetUserProfile(Guid userId);
 
         Task UpdateUserProfile(Guid userId, string name, string phone);
+        Task UpdateDriverLocation(Guid driverId, Location location);
 
         Task ResetPassword(Guid userId, string newPassword);
 

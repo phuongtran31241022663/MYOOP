@@ -1,5 +1,6 @@
 ﻿using GMap.NET;
 using OOP.Application.Services.Interfaces;
+using OOP.Domain.Entities;
 using OOP.Domain.Enums;
 using OOP.Infrastructure.Map;
 using OOP.Presentation;
@@ -23,7 +24,41 @@ namespace OOP.Presentation.TripForms
         private Label LabelDistance = null!;
         private Label LabelEstimatedFare = null!;
         private Button ButtonRequestTrip = null!;
+        private Button _btnCancelTrip = null!;
         private Button ButtonBack = null!;
+        private Label _lblTripStatus = null!;
+        private Label _lblMapHint = null!;
+
+        private Guid _currentTripId = Guid.Empty;
+
+        private static readonly List<DomainLocation> _searchHistory = new();
+        private static readonly List<DomainLocation> _fixedLocations = new()
+        {
+            new DomainLocation("UEH Cơ sở A", "59C Nguyễn Đình Chiểu, Q.3", 10.7826, 106.6954),
+            new DomainLocation("UEH Cơ sở B", "279 Nguyễn Tri Phương, Q.10", 10.7679, 106.6707),
+            new DomainLocation("UEH Cơ sở N", "78 Nguyễn Văn Thủ, Q.1", 10.7840, 106.6968)
+        };
+
+        private enum SuggestionKind { Header, Location }
+        private sealed class SuggestionItem
+        {
+            public SuggestionKind Kind { get; }
+            public string Header { get; }
+            public DomainLocation? Location { get; }
+
+            public SuggestionItem(string header)
+            {
+                Kind = SuggestionKind.Header;
+                Header = header;
+            }
+
+            public SuggestionItem(DomainLocation location)
+            {
+                Kind = SuggestionKind.Location;
+                Location = location;
+                Header = "";
+            }
+        }
 
         private TextBox _activeTextBox = null!;
 
@@ -31,11 +66,19 @@ namespace OOP.Presentation.TripForms
         {
             Visible = false,
             DrawMode = DrawMode.OwnerDrawFixed,
-            ItemHeight = 45
+            ItemHeight = 42
         };
 
         private readonly System.Windows.Forms.Timer _searchDebounceTimer =
             new System.Windows.Forms.Timer { Interval = 500 };
+
+        private readonly System.Windows.Forms.Timer _nearbyTimer =
+            new System.Windows.Forms.Timer { Interval = 3000 };
+
+        private readonly System.Windows.Forms.Timer _tripPollTimer =
+            new System.Windows.Forms.Timer { Interval = 2000 };
+
+        private const double NearbyRadiusKm = 3.0;
 
         public RequestTripForm(
             Guid passengerId,
@@ -61,6 +104,11 @@ namespace OOP.Presentation.TripForms
                 TextBoxDestination.Text = "";
                 UpdateRequestButton();
             };
+
+            _nearbyTimer.Tick += async (_, _) => await RefreshNearbyDrivers();
+            _nearbyTimer.Start();
+
+            _tripPollTimer.Tick += async (_, _) => await RefreshTripOnMap();
         }
 
         private void InitForm()
@@ -74,12 +122,28 @@ namespace OOP.Presentation.TripForms
 
         private void BuildUI()
         {
-            var panel = new FlowLayoutPanel
+            var panel = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 60,
-                Padding = new Padding(12, 10, 12, 0),
+                Height = 96,
+                Padding = new Padding(12, 8, 12, 8),
                 BackColor = AppTheme.CardBg
+            };
+
+            var row1 = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                Height = 40,
+                WrapContents = false,
+                AutoSize = false
+            };
+
+            var row2 = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                Height = 40,
+                WrapContents = false,
+                AutoSize = false
             };
 
             TextBoxPickup = new TextBox
@@ -120,6 +184,24 @@ namespace OOP.Presentation.TripForms
                 TextAlign = ContentAlignment.MiddleLeft
             };
 
+            _lblTripStatus = new Label
+            {
+                Text = "Trạng thái: --",
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                ForeColor = AppTheme.Primary,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
+            _lblMapHint = new Label
+            {
+                Text = "Chọn điểm: nhấp chuột phải trên bản đồ",
+                AutoSize = true,
+                Font = new Font("Segoe UI", 8.5f),
+                ForeColor = AppTheme.TextMuted,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
             ButtonRequestTrip = new Button
             {
                 Text = "ĐẶT XE",
@@ -134,6 +216,21 @@ namespace OOP.Presentation.TripForms
             };
             ButtonRequestTrip.FlatAppearance.BorderSize = 0;
             ButtonRequestTrip.Click += async (_, _) => await OnRequestTripClicked();
+
+            _btnCancelTrip = new Button
+            {
+                Text = "HỦY",
+                Width = 80,
+                Height = 36,
+                BackColor = AppTheme.Danger,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+                Enabled = false
+            };
+            _btnCancelTrip.FlatAppearance.BorderSize = 0;
+            _btnCancelTrip.Click += async (_, _) => await OnCancelTripClicked();
 
             ButtonBack = new Button
             {
@@ -158,7 +255,9 @@ namespace OOP.Presentation.TripForms
 
             _lstGlobalSuggestions.MouseClick += async (_, _) =>
             {
-                if (_lstGlobalSuggestions.SelectedItem is not DomainLocation selected) return;
+                if (_lstGlobalSuggestions.SelectedItem is not SuggestionItem item) return;
+                if (item.Kind == SuggestionKind.Header || item.Location == null) return;
+                var selected = item.Location;
 
                 string displayText = string.IsNullOrEmpty(selected.Address)
                     ? selected.Name
@@ -170,21 +269,29 @@ namespace OOP.Presentation.TripForms
                 bool isPickup = (_activeTextBox == TextBoxPickup);
                 await _mapControl.SelectLocation(selected, isPickup);
 
+                AddToHistory(selected);
                 await UpdateEstimation();
                 UpdateRequestButton();
             };
 
             Click += (_, _) => _lstGlobalSuggestions.Visible = false;
 
-            panel.Controls.Add(MakeLabel("Từ:"));
-            panel.Controls.Add(TextBoxPickup);
-            panel.Controls.Add(MakeLabel("Đến:"));
-            panel.Controls.Add(TextBoxDestination);
-            panel.Controls.Add(ComboVehicleType);
-            panel.Controls.Add(LabelDistance);
-            panel.Controls.Add(LabelEstimatedFare);
-            panel.Controls.Add(ButtonRequestTrip);
-            panel.Controls.Add(ButtonBack);
+            row1.Controls.Add(MakeLabel("Từ:"));
+            row1.Controls.Add(TextBoxPickup);
+            row1.Controls.Add(MakeLabel("Đến:"));
+            row1.Controls.Add(TextBoxDestination);
+            row1.Controls.Add(ComboVehicleType);
+
+            row2.Controls.Add(LabelDistance);
+            row2.Controls.Add(LabelEstimatedFare);
+            row2.Controls.Add(_lblTripStatus);
+            row2.Controls.Add(_lblMapHint);
+            row2.Controls.Add(ButtonRequestTrip);
+            row2.Controls.Add(_btnCancelTrip);
+            row2.Controls.Add(ButtonBack);
+
+            panel.Controls.Add(row2);
+            panel.Controls.Add(row1);
 
             _mapControl = new MapControl(_http, _routeService) { Dock = DockStyle.Fill };
             _mapControl.SetPickupSelector(() => _activeTextBox == TextBoxPickup || _activeTextBox == null);
@@ -207,6 +314,8 @@ namespace OOP.Presentation.TripForms
 
             TextBoxPickup.GotFocus += (_, _) => _activeTextBox = TextBoxPickup;
             TextBoxDestination.GotFocus += (_, _) => _activeTextBox = TextBoxDestination;
+            TextBoxPickup.GotFocus += (_, _) => ShowHistorySuggestionsIfEmpty(TextBoxPickup);
+            TextBoxDestination.GotFocus += (_, _) => ShowHistorySuggestionsIfEmpty(TextBoxDestination);
         }
 
         private void RestartSearchTimer(TextBox tb)
@@ -221,28 +330,12 @@ namespace OOP.Presentation.TripForms
             string query = _activeTextBox?.Text ?? "";
             if (query.Length < 3)
             {
-                _lstGlobalSuggestions.Visible = false;
+                ShowHistorySuggestions();
                 return;
             }
 
             var results = await _mapControl.GetSuggestions(query);
-            if (results != null && results.Count > 0)
-            {
-                _lstGlobalSuggestions.Items.Clear();
-                foreach (var item in results) _lstGlobalSuggestions.Items.Add(item);
-
-                Point screenPos = _activeTextBox.Parent.PointToScreen(
-                    new Point(_activeTextBox.Left, _activeTextBox.Bottom));
-                _lstGlobalSuggestions.Location = PointToClient(screenPos);
-                _lstGlobalSuggestions.Width = _activeTextBox.Width;
-                _lstGlobalSuggestions.Height = Math.Min(results.Count * 45, 180);
-                _lstGlobalSuggestions.Visible = true;
-                _lstGlobalSuggestions.BringToFront();
-            }
-            else
-            {
-                _lstGlobalSuggestions.Visible = false;
-            }
+            BuildSuggestionList(query, results ?? new List<DomainLocation>());
         }
 
         private void LstGlobalSuggestions_DrawItem(object? sender, DrawItemEventArgs e)
@@ -250,18 +343,124 @@ namespace OOP.Presentation.TripForms
             if (e.Index < 0) return;
             e.DrawBackground();
 
-            var item = (DomainLocation)_lstGlobalSuggestions.Items[e.Index];
+            if (_lstGlobalSuggestions.Items[e.Index] is not SuggestionItem item) return;
 
+            if (item.Kind == SuggestionKind.Header)
+            {
+                using var fontHeader = new Font(e.Font!, FontStyle.Bold);
+                using var brush = new SolidBrush(Color.FromArgb(90, 90, 90));
+                e.Graphics.DrawString(item.Header, fontHeader, brush, e.Bounds.X + 5, e.Bounds.Y + 10);
+                e.DrawFocusRectangle();
+                return;
+            }
+
+            var loc = item.Location!;
             using var fontName = new Font(e.Font!, FontStyle.Bold);
             using var fontAddr = new Font(e.Font!.FontFamily, 8);
 
-            string name = item.Name ?? "";
-            string address = item.Address ?? "";
+            string name = loc.Name ?? "";
+            string address = loc.Address ?? "";
 
             e.Graphics.DrawString(name, fontName, Brushes.Black, e.Bounds.X + 5, e.Bounds.Y + 2);
             e.Graphics.DrawString(address, fontAddr, Brushes.Gray, e.Bounds.X + 5, e.Bounds.Y + 22);
 
             e.DrawFocusRectangle();
+        }
+
+        private void ShowHistorySuggestionsIfEmpty(TextBox tb)
+        {
+            if (!string.IsNullOrWhiteSpace(tb.Text)) return;
+            _activeTextBox = tb;
+            ShowHistorySuggestions();
+        }
+
+        private void ShowHistorySuggestions()
+        {
+            _lstGlobalSuggestions.Items.Clear();
+
+            var history = _searchHistory.Take(5).ToList();
+            if (history.Count > 0)
+            {
+                _lstGlobalSuggestions.Items.Add(new SuggestionItem("History"));
+                foreach (var h in history) _lstGlobalSuggestions.Items.Add(new SuggestionItem(h));
+            }
+
+            if (_fixedLocations.Count > 0)
+            {
+                _lstGlobalSuggestions.Items.Add(new SuggestionItem("Fixed Locations"));
+                foreach (var f in _fixedLocations) _lstGlobalSuggestions.Items.Add(new SuggestionItem(f));
+            }
+
+            ShowSuggestionList();
+        }
+
+        private void BuildSuggestionList(string query, List<DomainLocation> results)
+        {
+            _lstGlobalSuggestions.Items.Clear();
+
+            var historyMatches = _searchHistory
+                .Where(h => h.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                            h.Address.Contains(query, StringComparison.OrdinalIgnoreCase))
+                .Take(5)
+                .ToList();
+
+            if (historyMatches.Count > 0)
+            {
+                _lstGlobalSuggestions.Items.Add(new SuggestionItem("History"));
+                foreach (var h in historyMatches) _lstGlobalSuggestions.Items.Add(new SuggestionItem(h));
+            }
+
+            if (results.Count > 0)
+            {
+                var ordered = results
+                    .OrderByDescending(r => r.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    .ThenByDescending(r => r.Address.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                _lstGlobalSuggestions.Items.Add(new SuggestionItem("Search Results"));
+                foreach (var r in ordered) _lstGlobalSuggestions.Items.Add(new SuggestionItem(r));
+            }
+
+            if (_fixedLocations.Count > 0)
+            {
+                var fixedMatches = _fixedLocations
+                    .Where(f => f.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                                f.Address.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (fixedMatches.Count > 0)
+                {
+                    _lstGlobalSuggestions.Items.Add(new SuggestionItem("Fixed Locations"));
+                    foreach (var f in fixedMatches) _lstGlobalSuggestions.Items.Add(new SuggestionItem(f));
+                }
+            }
+
+            ShowSuggestionList();
+        }
+
+        private void ShowSuggestionList()
+        {
+            if (_lstGlobalSuggestions.Items.Count == 0)
+            {
+                _lstGlobalSuggestions.Visible = false;
+                return;
+            }
+
+            Point screenPos = _activeTextBox.Parent.PointToScreen(
+                new Point(_activeTextBox.Left, _activeTextBox.Bottom));
+            _lstGlobalSuggestions.Location = PointToClient(screenPos);
+            _lstGlobalSuggestions.Width = _activeTextBox.Width;
+            _lstGlobalSuggestions.Height = Math.Min(_lstGlobalSuggestions.Items.Count * 42, 220);
+            _lstGlobalSuggestions.Visible = true;
+            _lstGlobalSuggestions.BringToFront();
+        }
+
+        private static void AddToHistory(DomainLocation location)
+        {
+            _searchHistory.RemoveAll(h => h.Name == location.Name && h.Address == location.Address);
+            _searchHistory.Insert(0, location);
+            if (_searchHistory.Count > 20)
+                _searchHistory.RemoveAt(_searchHistory.Count - 1);
         }
 
         private void UpdateRequestButton()
@@ -318,6 +517,26 @@ namespace OOP.Presentation.TripForms
             }
         }
 
+        private async Task RefreshNearbyDrivers()
+        {
+            try
+            {
+                if (_mapControl.PickupPoint == default(PointLatLng))
+                {
+                    _mapControl.UpdateNearbyDrivers(Array.Empty<Driver>());
+                    return;
+                }
+
+                var pickup = new DomainLocation("Pickup", "Pickup",
+                    _mapControl.PickupPoint.Lat, _mapControl.PickupPoint.Lng);
+
+                var vehicle = (VehicleType)ComboVehicleType.SelectedItem!;
+                var drivers = await _tripService.GetNearbyDrivers(pickup, vehicle, NearbyRadiusKm);
+                _mapControl.UpdateNearbyDrivers(drivers);
+            }
+            catch { /* no-op */ }
+        }
+
         private async Task OnRequestTripClicked()
         {
             var p1 = _mapControl.PickupPoint;
@@ -343,10 +562,23 @@ namespace OOP.Presentation.TripForms
 
             try
             {
-                await _tripService.RequestTrip(_passengerId, pickup, destination, vehicle);
+                var trip = await _tripService.RequestTrip(_passengerId, pickup, destination, vehicle);
+                _currentTripId = trip.Id;
+                _lblTripStatus.Text = "Trạng thái: Đang tìm tài xế...";
+
+                // Lock inputs while tracking
+                TextBoxPickup.Enabled = false;
+                TextBoxDestination.Enabled = false;
+                ComboVehicleType.Enabled = false;
+                ButtonRequestTrip.Enabled = false;
+                ButtonRequestTrip.Text = "Đã đặt";
+                _btnCancelTrip.Enabled = true;
+
+                _nearbyTimer.Stop();
+                _tripPollTimer.Start();
+
                 MessageBox.Show("Yêu cầu thành công! Đang tìm tài xế...",
                     "Đặt xe", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                Close();
             }
             catch (Exception ex)
             {
@@ -356,6 +588,104 @@ namespace OOP.Presentation.TripForms
                 ButtonRequestTrip.Text = "ĐẶT XE";
             }
         }
+
+        private async Task OnCancelTripClicked()
+        {
+            if (_currentTripId == Guid.Empty) return;
+
+            if (MessageBox.Show("Bạn có chắc muốn hủy chuyến đi?",
+                "Xác nhận hủy", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+
+            try
+            {
+                await _tripService.CancelTrip(_currentTripId, "Hành khách tự hủy");
+                _lblTripStatus.Text = "Trạng thái: Đã hủy";
+                _btnCancelTrip.Enabled = false;
+                _tripPollTimer.Stop();
+                ResetForm();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Không thể hủy: {ex.Message}", "Lỗi",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private async Task RefreshTripOnMap()
+        {
+            if (_currentTripId == Guid.Empty) return;
+
+            try
+            {
+                var trip = await _tripService.GetTrip(_currentTripId);
+                if (trip == null) return;
+
+                _lblTripStatus.Text = $"Trạng thái: {StatusLabel(trip.Status)}";
+
+                var pickupPoint = new PointLatLng(trip.PickupLocation.Lat, trip.PickupLocation.Lng);
+                var destPoint = new PointLatLng(trip.DestinationLocation.Lat, trip.DestinationLocation.Lng);
+                _mapControl.SetPickupMarker(pickupPoint);
+                await _mapControl.SetDropoffMarker(destPoint);
+
+                var driver = await _tripService.GetDriverForTrip(_currentTripId);
+                if (driver != null)
+                {
+                    _mapControl.UpdateDriverLocation(driver.Id,
+                        new PointLatLng(driver.CurrentLocation.Lat, driver.CurrentLocation.Lng));
+
+                    if (trip.Status == TripStatus.Matched || trip.Status == TripStatus.Arrived)
+                        await _mapControl.DrawDriverToPickupRouteAsync(
+                            new PointLatLng(driver.CurrentLocation.Lat, driver.CurrentLocation.Lng),
+                            pickupPoint);
+                    else if (trip.Status == TripStatus.Started || trip.Status == TripStatus.Completed)
+                        await _mapControl.DrawTripRouteAsync(pickupPoint, destPoint);
+                }
+
+                if (trip.Status == TripStatus.Completed || trip.Status == TripStatus.Cancelled || trip.Status == TripStatus.Timeout)
+                {
+                    _tripPollTimer.Stop();
+                    _lblTripStatus.Text = $"Trạng thái: {StatusLabel(trip.Status)}";
+                    _btnCancelTrip.Enabled = false;
+                    if (trip.Status == TripStatus.Timeout)
+                    {
+                        MessageBox.Show("Không có tài xế nhận chuyến. Yêu cầu đã hết thời gian.",
+                            "Hết thời gian", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    ResetForm();
+                }
+            }
+            catch { /* swallow */ }
+        }
+
+        private void ResetForm()
+        {
+            _currentTripId = Guid.Empty;
+            TextBoxPickup.Enabled = true;
+            TextBoxDestination.Enabled = true;
+            ComboVehicleType.Enabled = true;
+            ButtonRequestTrip.Enabled = true;
+            ButtonRequestTrip.Text = "ĐẶT XE";
+            _btnCancelTrip.Enabled = false;
+            _lblTripStatus.Text = "Trạng thái: --";
+
+            _mapControl.ClearRoute();
+            TextBoxPickup.Text = "";
+            TextBoxDestination.Text = "";
+            _nearbyTimer.Start();
+        }
+
+        private static string StatusLabel(TripStatus status) => status switch
+        {
+            TripStatus.Requested => "⏳ Đang tìm tài xế",
+            TripStatus.Searching => "🔎 Đang tìm tài xế",
+            TripStatus.Matched => "🤝 Đã ghép tài xế",
+            TripStatus.Arrived => "📍 Tài xế đã đến",
+            TripStatus.Started => "🚗 Đang di chuyển",
+            TripStatus.Completed => "✅ Hoàn thành",
+            TripStatus.Cancelled => "❌ Đã hủy",
+            TripStatus.Timeout => "⌛ Hết thời gian",
+            _ => status.ToString()
+        };
 
         private static Label MakeLabel(string text) => new Label
         {
@@ -372,6 +702,8 @@ namespace OOP.Presentation.TripForms
             if (disposing)
             {
                 _searchDebounceTimer.Dispose();
+                _nearbyTimer.Dispose();
+                _tripPollTimer.Dispose();
             }
             base.Dispose(disposing);
         }

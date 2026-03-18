@@ -20,6 +20,7 @@ namespace OOP.Presentation.TripForms
 
         private Trip? _trip;
         private Driver? _driver;
+        private bool _canMarkArrived = false;
         private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 2000 };
 
         private GMapControl Map = null!;
@@ -85,6 +86,11 @@ namespace OOP.Presentation.TripForms
             Map.Overlays.Add(markerOverlay);
             Map.Overlays.Add(routeOverlay);
             Map.Overlays.Add(driverRouteOverlay);
+            Map.MouseClick += async (s, e) =>
+            {
+                if (e.Button == MouseButtons.Right)
+                    await OnMapRightClick(e.X, e.Y);
+            };
 
             BuildTripPanel();
             Controls.Add(Map);
@@ -194,9 +200,9 @@ namespace OOP.Presentation.TripForms
             if (_trip == null) return;
             if (InvokeRequired) { BeginInvoke(UpdateButtonStates); return; }
 
-            ButtonMarkArrived.Enabled = _trip.Status == OOP.Domain.Enums.TripStatus.Matched;
+            ButtonMarkArrived.Enabled = _trip.Status == OOP.Domain.Enums.TripStatus.Matched && _canMarkArrived;
             ButtonStartTrip.Enabled = _trip.Status == OOP.Domain.Enums.TripStatus.Arrived;
-            ButtonCompleteTrip.Enabled = _trip.Status == OOP.Domain.Enums.TripStatus.Ongoing;
+            ButtonCompleteTrip.Enabled = _trip.Status == OOP.Domain.Enums.TripStatus.Started;
         }
 
         private void SetMarkers()
@@ -242,7 +248,7 @@ namespace OOP.Presentation.TripForms
                 }
             }
 
-            if (_trip.Status == TripStatus.Ongoing || _trip.Status == TripStatus.Completed)
+            if (_trip.Status == TripStatus.Started || _trip.Status == TripStatus.Completed)
             {
                 var route = await _routeService.GetFullRouteAsync(
                     _trip.PickupLocation, _trip.DestinationLocation);
@@ -307,11 +313,13 @@ namespace OOP.Presentation.TripForms
         private static string StatusLabel(OOP.Domain.Enums.TripStatus status) => status switch
         {
             OOP.Domain.Enums.TripStatus.Requested => "⏳ Đang chờ tài xế",
+            OOP.Domain.Enums.TripStatus.Searching => "🔎 Đang tìm tài xế",
             OOP.Domain.Enums.TripStatus.Matched => "🤝 Đã nhận",
             OOP.Domain.Enums.TripStatus.Arrived => "📍 Đã đến nơi đón",
-            OOP.Domain.Enums.TripStatus.Ongoing => "🚗 Đang chạy",
+            OOP.Domain.Enums.TripStatus.Started => "🚗 Đang chạy",
             OOP.Domain.Enums.TripStatus.Completed => "✅ Hoàn thành",
             OOP.Domain.Enums.TripStatus.Cancelled => "❌ Đã hủy",
+            OOP.Domain.Enums.TripStatus.Timeout => "⌛ Hết thời gian",
             _ => status.ToString()
         };
 
@@ -335,10 +343,34 @@ namespace OOP.Presentation.TripForms
             var user = await _userService.GetUserProfile(_driverId);
             _driver = user as Driver;
 
+            if (_trip.Status == TripStatus.Matched && _driver != null)
+                _canMarkArrived = await _routeService.IsNearAsync(
+                    _driver.CurrentLocation, _trip.PickupLocation, 0.08);
+            else
+                _canMarkArrived = false;
+
             RefreshLabels();
             SetMarkers();
             await DrawRoutes();
             UpdateButtonStates();
+        }
+
+        private async Task OnMapRightClick(int x, int y)
+        {
+            var confirm = MessageBox.Show(
+                "Cập nhật vị trí hiện tại của tài xế tại điểm vừa chọn?",
+                "Cập nhật vị trí", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (confirm != DialogResult.Yes) return;
+
+            var point = Map.FromLocalToLatLng(x, y);
+            var loc = new OOP.Domain.Entities.Location("Vị trí hiện tại", "Tài xế cập nhật", point.Lat, point.Lng);
+
+            try
+            {
+                await _userService.UpdateDriverLocation(_driverId, loc);
+                await RefreshTripAsync();
+            }
+            catch (Exception ex) { ShowError(ex.Message); }
         }
     }
 }
