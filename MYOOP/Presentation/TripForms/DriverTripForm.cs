@@ -227,8 +227,6 @@ namespace OOP.Presentation.TripForms
 
         private async Task DrawRoutes()
         {
-            foreach (var r in routeOverlay.Routes) r.Stroke?.Dispose();
-            foreach (var r in driverRouteOverlay.Routes) r.Stroke?.Dispose();
             routeOverlay.Routes.Clear();
             driverRouteOverlay.Routes.Clear();
 
@@ -332,6 +330,7 @@ namespace OOP.Presentation.TripForms
             {
                 // Dispose all route Pens on form close
                 foreach (var r in routeOverlay.Routes) r.Stroke?.Dispose();
+                foreach (var r in driverRouteOverlay.Routes) r.Stroke?.Dispose();
             }
             base.Dispose(disposing);
         }

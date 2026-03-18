@@ -31,7 +31,7 @@ namespace OOP.Presentation.TripForms
 
         private Guid _currentTripId = Guid.Empty;
 
-        private static readonly List<DomainLocation> _searchHistory = new();
+        private readonly List<DomainLocation> _searchHistory = new();
         private static readonly List<DomainLocation> _fixedLocations = new()
         {
             new DomainLocation("UEH Cơ sở A", "59C Nguyễn Đình Chiểu, Q.3", 10.7826, 106.6954),
@@ -455,7 +455,7 @@ namespace OOP.Presentation.TripForms
             _lstGlobalSuggestions.BringToFront();
         }
 
-        private static void AddToHistory(DomainLocation location)
+        private void AddToHistory(DomainLocation location)
         {
             _searchHistory.RemoveAll(h => h.Name == location.Name && h.Address == location.Address);
             _searchHistory.Insert(0, location);

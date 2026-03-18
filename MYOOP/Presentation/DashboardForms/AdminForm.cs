@@ -211,12 +211,6 @@ namespace OOP.Presentation
                 // 4. Gọi Service thực hiện
                 if (currentlyActive)
                 {
-                    // Chặn ngay lập tức nếu Admin tự chọn chính mình để khóa
-                    if (targetUserId == _admin.Id)
-                    {
-                        ShowError("Hệ thống ngăn chặn hành động tự khóa tài khoản của chính mình.");
-                        return;
-                    }
                     await _adminService.DeactivateUser(targetUserId, _admin.Id);
                 }
                 else
@@ -447,11 +441,28 @@ namespace OOP.Presentation
 
         private async Task LoadAllData()
         {
+            var loadUsers = LoadUsers();
+            var loadTrips = LoadTrips();
+            var loadFareRules = LoadFareRules();
+
             try
             {
-                await Task.WhenAll(LoadUsers(), LoadTrips(), LoadFareRules());
+                await Task.WhenAll(loadUsers, loadTrips, loadFareRules);
             }
-            catch (Exception ex) { ShowError(ex.Message); }
+            catch
+            {
+                var errors = new List<string>();
+                if (loadUsers.Exception != null)
+                    errors.AddRange(loadUsers.Exception.InnerExceptions.Select(e => e.Message));
+                if (loadTrips.Exception != null)
+                    errors.AddRange(loadTrips.Exception.InnerExceptions.Select(e => e.Message));
+                if (loadFareRules.Exception != null)
+                    errors.AddRange(loadFareRules.Exception.InnerExceptions.Select(e => e.Message));
+
+                ShowError(errors.Count > 0
+                    ? string.Join("\n", errors.Distinct())
+                    : "Không thể tải dữ liệu.");
+            }
         }
 
         private async Task OnEditFareRuleClicked()

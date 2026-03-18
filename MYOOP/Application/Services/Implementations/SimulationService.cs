@@ -131,7 +131,7 @@ namespace OOP.Application.Services
             var trip = await _tripRepo.GetById(tripId);
             if (trip == null) return;
 
-            if (trip.Status == TripStatus.Matched || trip.Status == TripStatus.Arrived)
+            if (trip.Status == TripStatus.Matched)
                 await SimulateDriverToPickup(tripId);
             else if (trip.Status == TripStatus.Started)
                 await SimulateTripToDestination(tripId);

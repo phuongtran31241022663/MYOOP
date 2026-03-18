@@ -120,6 +120,8 @@ namespace OOP.Presentation.TripForms
             try
             {
                 var trips = await _tripService.GetTripHistory(_userId);
+                var users = await _userRepo.GetAll();
+                var nameMap = users.ToDictionary(u => u.Id, u => u.Name);
 
                 if (trips.Count == 0)
                 {
@@ -137,8 +139,9 @@ namespace OOP.Presentation.TripForms
                     string driverName = "Chưa có";
                     if (t.DriverId.HasValue)
                     {
-                        var u = await _userRepo.GetById(t.DriverId.Value);
-                        driverName = u?.Name ?? t.DriverId.Value.ToString()[..8];
+                        driverName = nameMap.TryGetValue(t.DriverId.Value, out var name)
+                            ? name
+                            : t.DriverId.Value.ToString()[..8];
                     }
 
                     _dgvTrips.Rows.Add(

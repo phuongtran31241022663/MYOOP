@@ -502,6 +502,8 @@ namespace OOP.Presentation
                 var availableTrips = await _tripService.GetAvailableTripsForDriver(_driver.Id);
                 var allDriverTrips = await _tripService.GetTripHistory(_driver.Id);
 
+                _notifiedTripIds.IntersectWith(availableTrips.Select(t => t.Id));
+
                 _dgvTrips.Rows.Clear();
 
                 // Hiện chuyến đang được gán cho driver này (Matched/Arrived/Started)
@@ -526,20 +528,18 @@ namespace OOP.Presentation
                 // Popup thông báo chuyến mới khi Available
                 if (_driver.Status == DriverStatus.Available)
                 {
+                    bool hasNew = false;
                     foreach (var t in availableTrips)
                     {
                         if (_notifiedTripIds.Contains(t.Id)) continue;
                         _notifiedTripIds.Add(t.Id);
-                        MessageBox.Show(
-                            $"Chuyến mới:\n" +
-                            $"Đón: {t.PickupLocation.Address}\n" +
-                            $"Đến: {t.DestinationLocation.Address}\n" +
-                            $"Loại xe: {t.VehicleType}\n" +
-                            $"Khoảng cách: {(t.Distance > 0 ? $"{t.Distance:F1} km" : "—")}",
-                            "Yêu cầu mới",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Information);
+                        hasNew = true;
+                        AddLogEntry(
+                            $"Chuyến mới: {t.PickupLocation.Address} → {t.DestinationLocation.Address} " +
+                            $"| {t.VehicleType} | {(t.Distance > 0 ? $"{t.Distance:F1} km" : "—")}");
                     }
+                    if (hasNew)
+                        System.Media.SystemSounds.Asterisk.Play();
                 }
 
                 UpdateCurrentTripPanel();
@@ -573,6 +573,8 @@ namespace OOP.Presentation
                 t.Distance > 0 ? $"{t.Distance:F1} km" : "–",
                 t.Fare > 0 ? $"{t.Fare:N0} đ" : "–",
                 StatusLabel(t.Status));
+
+            _dgvTrips.Rows[rowIdx].Tag = t.Status;
 
             if (isCurrentTrip)
             {
@@ -637,6 +639,7 @@ namespace OOP.Presentation
                 return;
 
             bool hasSelection = _dgvTrips.CurrentRow != null;
+            var selectedStatus = _dgvTrips.CurrentRow?.Tag is TripStatus ts ? ts : (TripStatus?)null;
             var tripStatus = _currentTrip?.Status;
 
             // Accept: có dòng được chọn, chưa có trip hiện tại, driver Available
@@ -645,9 +648,8 @@ namespace OOP.Presentation
                               && hasSelection;
 
             // Reject: chỉ khi chọn trip Requested và chưa có trip hiện tại
-            bool selectedIsRequested = hasSelection
-                && (_dgvTrips.CurrentRow?.Cells["Status"].Value?.ToString()?.Contains("⏳") == true
-                    || _dgvTrips.CurrentRow?.Cells["Status"].Value?.ToString()?.Contains("🔎") == true);
+            bool selectedIsRequested = selectedStatus == TripStatus.Requested
+                                    || selectedStatus == TripStatus.Searching;
             _btnReject.Visible = _currentTrip == null
                               && _driver.Status == DriverStatus.Available
                               && selectedIsRequested;
@@ -701,9 +703,7 @@ namespace OOP.Presentation
                     return;
                 }
 
-                if (_lstLog.Items.Count >= 200) _lstLog.Items.RemoveAt(0);
-                _lstLog.Items.Add($"[{DateTime.Now:HH:mm}] {message}");
-                _lstLog.TopIndex = _lstLog.Items.Count - 1;
+                AddLogEntry(message);
             }
             catch { }
         }
@@ -713,6 +713,14 @@ namespace OOP.Presentation
             if (driverId != _driver.Id) return;
             if (InvokeRequired) { BeginInvoke(() => OnDriverNotified(driverId, message)); return; }
 
+            AddLogEntry(message);
+        }
+
+        private void AddLogEntry(string message)
+        {
+            if (_lstLog == null) return;
+            if (InvokeRequired) { BeginInvoke(() => AddLogEntry(message)); return; }
+
             if (_lstLog.Items.Count >= 200) _lstLog.Items.RemoveAt(0);
             _lstLog.Items.Add($"[{DateTime.Now:HH:mm}] {message}");
             _lstLog.TopIndex = _lstLog.Items.Count - 1;
@@ -721,10 +729,7 @@ namespace OOP.Presentation
         // Persist trạng thái driver qua UserService (để lưu vào storage)
         private async Task PersistDriverStatus()
         {
-            // UserService không có UpdateDriverStatus() riêng
-            // — gọi UpdateUserProfile với thông tin hiện tại để trigger Save()
-            // Trong app thật nên thêm method UpdateDriverStatus vào IUserService
-            await _userService.UpdateUserProfile(_driver.Id, _driver.Name, _driver.Phone);
+            await _userService.UpdateDriverStatus(_driver.Id, _driver.Status);
         }
 
         // ─── Grid helpers ─────────────────────────────────────────────────────────

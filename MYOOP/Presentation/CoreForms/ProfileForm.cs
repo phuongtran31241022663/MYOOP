@@ -1,4 +1,5 @@
-using OOP.Application.Services.Interfaces;
+﻿using OOP.Application.Services.Interfaces;
+using OOP.Application.Validators;
 using OOP.Domain.Entities;
 
 namespace OOP.Presentation.CoreForms
@@ -12,6 +13,7 @@ namespace OOP.Presentation.CoreForms
         private TextBox _txtPhone = null!;
         private Button _btnSave = null!;
         private Button _btnCancel = null!;
+        private readonly ErrorProvider _errorProvider = new();
 
         public ProfileForm(User user, IUserService userService)
         {
@@ -32,6 +34,9 @@ namespace OOP.Presentation.CoreForms
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
+
+            _errorProvider.BlinkStyle = ErrorBlinkStyle.NeverBlink;
+            _errorProvider.ContainerControl = this;
         }
 
         private void BuildUI()
@@ -97,9 +102,32 @@ namespace OOP.Presentation.CoreForms
 
         private async Task OnSave()
         {
+            _errorProvider.Clear();
+            string name = _txtName.Text.Trim();
+            string phone = _txtPhone.Text.Trim();
+
+            bool valid = true;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                _errorProvider.SetError(_txtName, "Họ tên không được để trống.");
+                valid = false;
+            }
+
             try
             {
-                await _userService.UpdateUserProfile(_user.Id, _txtName.Text.Trim(), _txtPhone.Text.Trim());
+                UserValidator.ValidatePhone(phone);
+            }
+            catch (Exception ex)
+            {
+                _errorProvider.SetError(_txtPhone, ex.Message);
+                valid = false;
+            }
+
+            if (!valid) return;
+
+            try
+            {
+                await _userService.UpdateUserProfile(_user.Id, name, phone);
                 MessageBox.Show("Cập nhật thành công.", "Thông báo",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                 Close();
@@ -112,3 +140,5 @@ namespace OOP.Presentation.CoreForms
         }
     }
 }
+
+

@@ -67,7 +67,7 @@ namespace OOP.Presentation
             _tripHistoryFormFactory = tripHistoryFormFactory ?? throw new ArgumentNullException(nameof(tripHistoryFormFactory));
             _ratingFormFactory = ratingFormFactory ?? throw new ArgumentNullException(nameof(ratingFormFactory));
 
-            _notification = notification;
+            _notification = notification ?? throw new ArgumentNullException(nameof(notification));
             _notification.OnPassengerNotified += OnNotification;
 
             InitForm();

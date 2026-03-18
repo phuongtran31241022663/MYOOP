@@ -9,7 +9,7 @@ using DomainLocation = OOP.Domain.Entities.Location;
 
 namespace OOP.Presentation.Map
 {
-    public class MapControl : Form
+    public class MapControl : UserControl
     {
         // ── GMap control ──────────────────────────────────────────────────────
         public GMapControl gmap = null!;
@@ -104,8 +104,6 @@ namespace OOP.Presentation.Map
             if (!_http.DefaultRequestHeaders.Contains("User-Agent"))
                 _http.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 RideGoApp/1.0");
 
-            TopLevel = false;
-            FormBorderStyle = FormBorderStyle.None;
             InitMap();
         }
 

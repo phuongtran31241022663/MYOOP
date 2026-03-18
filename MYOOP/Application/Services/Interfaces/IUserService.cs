@@ -10,6 +10,7 @@ namespace OOP.Application.Services.Interfaces
 
         Task UpdateUserProfile(Guid userId, string name, string phone);
         Task UpdateDriverLocation(Guid driverId, Location location);
+        Task UpdateDriverStatus(Guid driverId, OOP.Domain.Enums.DriverStatus status);
 
         Task ResetPassword(Guid userId, string newPassword);
 

@@ -1,5 +1,6 @@
 ﻿﻿using OOP.Application.Validators;
 using OOP.Domain.Entities;
+using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
 using System.Security.Cryptography;
 using System.Text;
@@ -63,6 +64,30 @@ namespace OOP.Application.Services
                 throw new InvalidOperationException("User không phải là Driver.");
 
             driver.UpdateLocation(location);
+            await _userRepo.Update(driver);
+        }
+
+        public async Task UpdateDriverStatus(Guid driverId, DriverStatus status)
+        {
+            var user = await GetOrThrow(driverId);
+            if (user is not Driver driver)
+                throw new InvalidOperationException("User không phải là Driver.");
+
+            switch (status)
+            {
+                case DriverStatus.Available:
+                    driver.SetAvailable();
+                    break;
+                case DriverStatus.Busy:
+                    driver.SetBusy();
+                    break;
+                case DriverStatus.Offline:
+                    driver.SetOffline();
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(status), status, "Trạng thái tài xế không hợp lệ.");
+            }
+
             await _userRepo.Update(driver);
         }
 

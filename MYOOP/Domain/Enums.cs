@@ -21,8 +21,7 @@
         Completed = 4,
         Cancelled = 5,
         Searching = 6,
-        Timeout = 7,
-        Ongoing = Started
+        Timeout = 7
     }
     public enum VehicleType
     {
