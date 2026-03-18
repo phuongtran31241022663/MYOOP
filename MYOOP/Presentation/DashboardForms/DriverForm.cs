@@ -443,7 +443,7 @@ namespace OOP.Presentation
                 if (updatedUser is Driver updatedDriver)
                 {
                     // Sync lại các giá trị hiển thị
-                    _driver.UpdateLocation(_driver.CurrentLocation); // trigger no-op để force
+                    _driver.UpdateLocation(_driver.Position); // trigger no-op để force
                 }
 
                 _currentTrip = null;

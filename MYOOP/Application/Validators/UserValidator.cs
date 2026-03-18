@@ -29,7 +29,7 @@ namespace OOP.Application.Validators
             if (driver.Vehicle == null)
                 throw new ArgumentException("Tài xế phải đăng ký xe.");
 
-            if (driver.CurrentLocation == null)
+            if (driver.Position == null)
                 throw new ArgumentException("Tài xế phải có vị trí hiện tại.");
 
             if (!driver.IsActive)

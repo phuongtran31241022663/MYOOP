@@ -631,11 +631,11 @@ namespace OOP.Presentation.TripForms
                 if (driver != null)
                 {
                     _mapControl.UpdateDriverLocation(driver.Id,
-                        new PointLatLng(driver.CurrentLocation.Lat, driver.CurrentLocation.Lng));
+                        new PointLatLng(driver.Position.Lat, driver.Position.Lng));
 
                     if (trip.Status == TripStatus.Matched || trip.Status == TripStatus.Arrived)
                         await _mapControl.DrawDriverToPickupRouteAsync(
-                            new PointLatLng(driver.CurrentLocation.Lat, driver.CurrentLocation.Lng),
+                            new PointLatLng(driver.Position.Lat, driver.Position.Lng),
                             pickupPoint);
                     else if (trip.Status == TripStatus.Started || trip.Status == TripStatus.Completed)
                         await _mapControl.DrawTripRouteAsync(pickupPoint, destPoint);

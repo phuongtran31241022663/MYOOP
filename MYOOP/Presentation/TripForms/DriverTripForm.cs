@@ -6,8 +6,6 @@ using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
 
-// FIX #1: was "MYOOP.Presentation.TripForms" — typo caused the class to live
-//         in a different namespace from the rest of the project.
 namespace OOP.Presentation.TripForms
 {
     public class DriverTripForm : Form
@@ -181,7 +179,6 @@ namespace OOP.Presentation.TripForms
             _refreshTimer.Start();
         }
 
-        // FIX #2: all UI mutations now run on the UI thread
         private void RefreshLabels()
         {
             if (_trip == null) return;
@@ -211,7 +208,7 @@ namespace OOP.Presentation.TripForms
             if (_driver != null)
             {
                 markerOverlay.Markers.Add(new GMarkerGoogle(
-                    new PointLatLng(_driver.CurrentLocation.Lat, _driver.CurrentLocation.Lng),
+                    new PointLatLng(_driver.Position.Lat, _driver.Position.Lng),
                     GMarkerGoogleType.blue_dot)
                 { ToolTipText = "Tài xế" });
             }
@@ -235,7 +232,7 @@ namespace OOP.Presentation.TripForms
             if ((_trip.Status == TripStatus.Matched || _trip.Status == TripStatus.Arrived) && _driver != null)
             {
                 var points = await _routeService.GetRoutePointsAsync(
-                    _driver.CurrentLocation, _trip.PickupLocation);
+                    _driver.Position, _trip.PickupLocation);
                 if (points.Count >= 2)
                 {
                     var pts = points.Select(p => new PointLatLng(p.Lat, p.Lng)).ToList();
@@ -344,7 +341,7 @@ namespace OOP.Presentation.TripForms
 
             if (_trip.Status == TripStatus.Matched && _driver != null)
                 _canMarkArrived = await _routeService.IsNearAsync(
-                    _driver.CurrentLocation, _trip.PickupLocation, 0.08);
+                    _driver.Position, _trip.PickupLocation, 0.08);
             else
                 _canMarkArrived = false;
 

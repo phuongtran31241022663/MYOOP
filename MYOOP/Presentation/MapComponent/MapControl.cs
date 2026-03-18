@@ -458,7 +458,7 @@ namespace OOP.Presentation.Map
 
             foreach (var driver in drivers)
             {
-                if (driver.CurrentLocation == null) continue;
+                if (driver.Position == null) continue;
                 string key = driver.Id.ToString();
                 string tooltip = $"Tài xế: {driver.Name}\n" +
                                  $"Xe: {driver.Vehicle.Type}\n" +
@@ -467,7 +467,7 @@ namespace OOP.Presentation.Map
                 if (!driverMarkers.ContainsKey(key))
                 {
                     var marker = new GMarkerGoogle(
-                        new PointLatLng(driver.CurrentLocation.Lat, driver.CurrentLocation.Lng),
+                        new PointLatLng(driver.Position.Lat, driver.Position.Lng),
                         GMarkerGoogleType.blue_dot)
                     {
                         ToolTipText = tooltip,
@@ -482,7 +482,7 @@ namespace OOP.Presentation.Map
                 }
 
                 UpdateDriverLocation(driver.Id,
-                    new PointLatLng(driver.CurrentLocation.Lat, driver.CurrentLocation.Lng));
+                    new PointLatLng(driver.Position.Lat, driver.Position.Lng));
             }
         }
 

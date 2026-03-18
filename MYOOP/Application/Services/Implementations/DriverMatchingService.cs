@@ -36,7 +36,7 @@ namespace OOP.Application.Services
                 .Where(d => d.IsActive
                          && d.Status == DriverStatus.Available
                          && d.Vehicle.Type == vehicleType
-                         && d.CurrentLocation != null
+                         && d.Position != null
                          && !excluded.Contains(d.Id))
                 .ToList();
 
@@ -48,7 +48,7 @@ namespace OOP.Application.Services
 
             foreach (var driver in candidates)
             {
-                double routeDistance = await _routeService.CalculateDistanceAsync(driver.CurrentLocation, pickup);
+                double routeDistance = await _routeService.CalculateDistanceAsync(driver.Position, pickup);
                 if (routeDistance < minDistance)
                 {
                     minDistance = routeDistance;
@@ -83,13 +83,13 @@ namespace OOP.Application.Services
                 .Where(d => d.IsActive
                          && d.Status == DriverStatus.Available
                          && d.Vehicle.Type == vehicleType
-                         && d.CurrentLocation != null)
+                         && d.Position != null)
                 .ToList();
 
             var result = new List<(Driver driver, double distance)>();
             foreach (var driver in candidates)
             {
-                double routeDistance = await _routeService.CalculateDistanceAsync(driver.CurrentLocation, pickup);
+                double routeDistance = await _routeService.CalculateDistanceAsync(driver.Position, pickup);
                 if (routeDistance <= maxKm)
                     result.Add((driver, routeDistance));
             }

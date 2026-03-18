@@ -7,7 +7,7 @@ namespace OOP.Domain.Entities
     public class Driver : User
     {
         [DataMember] public DriverStatus Status { get; private set; }
-        [DataMember] public Location CurrentLocation { get; private set; }
+        [DataMember] public Location Position { get; private set; }
         [DataMember] public string LicenseNumber { get; private set; }
         [DataMember] public Vehicle Vehicle { get; private set; }
 
@@ -33,12 +33,12 @@ namespace OOP.Domain.Entities
             string hashedPassword,
             bool isActive,
             Vehicle vehicle,
-            Location currentLocation,
+            Location position,
             string licenseNumber)
             : base(id, name, phone, hashedPassword, isActive, UserRole.Driver)
         {
             Vehicle = vehicle ?? throw new ArgumentNullException(nameof(vehicle));
-            CurrentLocation = currentLocation ?? throw new ArgumentNullException(nameof(currentLocation));
+            Position = position ?? throw new ArgumentNullException(nameof(position));
             LicenseNumber = licenseNumber;
 
             Status = DriverStatus.Available;
@@ -69,7 +69,7 @@ namespace OOP.Domain.Entities
         // ── Vị trí ───────────────────────────────────────────────────────────
         public void UpdateLocation(Location location)
         {
-            CurrentLocation = location ?? throw new ArgumentNullException(nameof(location));
+            Position = location ?? throw new ArgumentNullException(nameof(location));
         }
 
         // ── Chuyến đi ────────────────────────────────────────────────────────

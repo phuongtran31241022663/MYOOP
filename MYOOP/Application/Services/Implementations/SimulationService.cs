@@ -44,7 +44,7 @@ namespace OOP.Application.Services
                 ?? throw new Exception("Driver not found");
 
             var route = await _routeService.GetFullRouteAsync(
-                driver.CurrentLocation,
+                driver.Position,
                 trip.PickupLocation);
 
             if (route == null || route.Points.Count < 2)

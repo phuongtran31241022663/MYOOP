@@ -34,17 +34,7 @@ namespace OOP.Presentation
 
         // ── Notification log ──────────────────────────────────────────────────
         private ListBox _lstLog = null!;
-
-        // FIX #1: removed _mapControl field — PassengerDashboard never embeds a map.
-        //         Driver markers live inside RequestTripForm which owns MapControl.
-        //         The original field was null! and caused a NullReferenceException
-        //         every 2 seconds inside RefreshDrivers().
-
         private readonly System.Windows.Forms.Timer _tripTimer = new() { Interval = 2000 };
-        // FIX #2: removed _driverTimer — it called _mapControl.UpdateDriverLocation
-        //         which crashed immediately because _mapControl was always null.
-
-        // FIX #3: track current trip id properly (was Guid.Empty forever)
         private Guid _currentTripId = Guid.Empty;
 
         public PassengerDashboardForm(
@@ -76,7 +66,6 @@ namespace OOP.Presentation
             _tripTimer.Tick += async (_, _) => await RefreshTripStatus();
             _tripTimer.Start();
 
-            // FIX #4: stop timers and unsubscribe notification when form closes
             FormClosed += (_, _) =>
             {
                 _tripTimer.Stop();
@@ -90,7 +79,6 @@ namespace OOP.Presentation
         {
             if (InvokeRequired) { BeginInvoke(() => OnNotification(id, msg)); return; }
 
-            // FIX #5: cap log at 200 items to prevent unbounded growth
             if (_lstLog.Items.Count >= 200) _lstLog.Items.RemoveAt(0);
             _lstLog.Items.Add($"[{DateTime.Now:HH:mm}] {msg}");
             _lstLog.TopIndex = _lstLog.Items.Count - 1; // auto-scroll to latest
@@ -174,8 +162,6 @@ namespace OOP.Presentation
             };
 
             // ── Trip status strip (Bottom, above log) ─────────────────────────
-            // FIX #6: properly placed as DockStyle.Bottom so it never overlaps
-            //         the header. Starts hidden; shown when a trip is booked.
             _pnlTripStatus = new Panel
             {
                 Dock = DockStyle.Bottom,
@@ -194,7 +180,6 @@ namespace OOP.Presentation
                 BackColor = Color.Transparent
             };
 
-            // FIX #7: btnCancel now has a proper click handler
             _btnCancel = new Button
             {
                 Text = "Hủy",
@@ -285,7 +270,6 @@ namespace OOP.Presentation
                 var form = _requestTripFormFactory(_passenger, _tripService);
                 OpenChildForm(form);
 
-                // FIX #3: after RequestTripForm closes, pick up any new active trip
                 _ = SyncActiveTripAsync();
             };
             y += 66;
