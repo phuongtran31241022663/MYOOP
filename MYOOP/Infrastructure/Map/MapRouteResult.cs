@@ -1,4 +1,4 @@
-﻿using DomainLocation = OOP.Domain.Entities.Location;
+﻿﻿using DomainLocation = OOP.Domain.Entities.Location;
 
 namespace OOP.Infrastructure.Map
 {

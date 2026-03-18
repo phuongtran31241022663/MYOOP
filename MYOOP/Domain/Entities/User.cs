@@ -1,4 +1,4 @@
-﻿using System.Runtime.Serialization;
+﻿﻿using System.Runtime.Serialization;
 using OOP.Domain.Enums;
 
 namespace OOP.Domain.Entities

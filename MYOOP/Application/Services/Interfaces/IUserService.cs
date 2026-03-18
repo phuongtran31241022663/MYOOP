@@ -1,4 +1,4 @@
-﻿using OOP.Domain.Entities;
+﻿﻿using OOP.Domain.Entities;
 
 namespace OOP.Application.Services.Interfaces
 {
@@ -9,6 +9,8 @@ namespace OOP.Application.Services.Interfaces
         Task<User?> GetUserProfile(Guid userId);
 
         Task UpdateUserProfile(Guid userId, string name, string phone);
+        Task UpdateDriverLocation(Guid driverId, Location location);
+        Task UpdateDriverStatus(Guid driverId, OOP.Domain.Enums.DriverStatus status);
 
         Task ResetPassword(Guid userId, string newPassword);
 

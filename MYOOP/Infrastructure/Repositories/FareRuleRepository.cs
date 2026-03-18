@@ -1,11 +1,11 @@
-﻿using OOP.Domain.Entities;
+﻿﻿using OOP.Domain.Entities;
 using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
 using OOP.Infrastructure.Storage;
 
 namespace OOP.Infrastructure.Repositories
 {
-    public class FareRuleRepository : BaseRepository<FareRule>, IFareRuleRepository
+    public class FareRuleRepository : BaseRepository<Fare>, IFareRuleRepository
     {
         private volatile bool _seeded = false;
         private readonly SemaphoreSlim _seedLock = new(1, 1);
@@ -39,15 +39,15 @@ namespace OOP.Infrastructure.Repositories
             if (Items.Count > 0) return;
 
             // Motorbike: Siêu rẻ
-            Items.Add(new FareRule(
+            Items.Add(new Fare(
                 vehicleType: VehicleType.Motorbike,
                 baseFare: 10000m,      // Giá mở cửa 10k
                 pricePerKm: 5000m,     // 5k mỗi km
-                minimumFare: 10000m,   // Giá sàn 10k (khớp với logic < 0.5km)
+                minimumFare: 10000m,   // Giá sàn 10k
                 commissionRate: DefaultCommission));
 
             // Car: Rẻ nhưng cao hơn xe máy
-            Items.Add(new FareRule(
+            Items.Add(new Fare(
                 vehicleType: VehicleType.Car,
                 baseFare: 15000m,     
                 pricePerKm: 10000m,    // 10k mỗi km
@@ -57,23 +57,23 @@ namespace OOP.Infrastructure.Repositories
             await Save();
         }
 
-        public async Task<List<FareRule>> GetAll()
+        public async Task<List<Fare>> GetAll()
         {
             await EnsureSeeded();
-            return new List<FareRule>(Items);
+            return new List<Fare>(Items);
         }
-        public async Task<FareRule?> GetById(Guid id)
+        public async Task<Fare?> GetById(Guid id)
         {
             await EnsureSeeded();
             return Items.FirstOrDefault(r => r.Id == id);
         }
-        public async Task<FareRule?> GetByVehicleType(VehicleType type)
+        public async Task<Fare?> GetByVehicleType(VehicleType type)
         {
             await EnsureSeeded();
             return Items.FirstOrDefault(r => r.VehicleType == type);
         }
 
-        public async Task Add(FareRule rule)
+        public async Task Add(Fare rule)
         {
             if (rule == null) throw new ArgumentNullException(nameof(rule));
 
@@ -95,7 +95,7 @@ namespace OOP.Infrastructure.Repositories
             }
         }
 
-        public async Task Update(FareRule rule)
+        public async Task Update(Fare rule)
         {
             if (rule == null) throw new ArgumentNullException(nameof(rule));
 

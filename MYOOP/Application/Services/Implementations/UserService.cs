@@ -1,5 +1,6 @@
-﻿using OOP.Application.Validators;
+﻿﻿using OOP.Application.Validators;
 using OOP.Domain.Entities;
+using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
 using System.Security.Cryptography;
 using System.Text;
@@ -25,7 +26,15 @@ namespace OOP.Application.Services
         public async Task UpdateUserProfile(Guid userId, string name, string phone)
         {
             var user = await GetOrThrow(userId);
-            user.UpdateProfile(name, phone);
+            var trimmedPhone = phone.Trim();
+
+            if (!string.Equals(user.Phone, trimmedPhone, StringComparison.OrdinalIgnoreCase))
+            {
+                if (await _userRepo.ExistsByPhone(trimmedPhone))
+                    throw new InvalidOperationException($"Số điện thoại '{trimmedPhone}' đã được đăng ký.");
+            }
+
+            user.UpdateProfile(name, trimmedPhone);
             UserValidator.ValidateUserUpdate(user);
             await _userRepo.Update(user);
         }
@@ -44,6 +53,42 @@ namespace OOP.Application.Services
             var user = await GetOrThrow(userId);
             user.Deactivate();
             await _userRepo.Update(user);
+        }
+
+        public async Task UpdateDriverLocation(Guid driverId, Location location)
+        {
+            if (location == null) throw new ArgumentNullException(nameof(location));
+
+            var user = await GetOrThrow(driverId);
+            if (user is not Driver driver)
+                throw new InvalidOperationException("User không phải là Driver.");
+
+            driver.UpdateLocation(location);
+            await _userRepo.Update(driver);
+        }
+
+        public async Task UpdateDriverStatus(Guid driverId, DriverStatus status)
+        {
+            var user = await GetOrThrow(driverId);
+            if (user is not Driver driver)
+                throw new InvalidOperationException("User không phải là Driver.");
+
+            switch (status)
+            {
+                case DriverStatus.Available:
+                    driver.SetAvailable();
+                    break;
+                case DriverStatus.Busy:
+                    driver.SetBusy();
+                    break;
+                case DriverStatus.Offline:
+                    driver.SetOffline();
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(status), status, "Trạng thái tài xế không hợp lệ.");
+            }
+
+            await _userRepo.Update(driver);
         }
 
         // --- Helpers ---

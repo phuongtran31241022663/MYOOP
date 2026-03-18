@@ -1,7 +1,8 @@
-﻿using OOP.Application.Interfaces;
-using OOP.Application.Services.Interfaces;
+﻿﻿﻿﻿using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
+using OOP.Domain.Interfaces;
+using OOP.Presentation.TripForms;
 
 namespace OOP.Presentation
 {
@@ -11,52 +12,80 @@ namespace OOP.Presentation
         private readonly Driver _driver;
         private readonly ITripService _tripService;
         private readonly IUserService _userService;
+        private readonly IUserRepository _userRepo;
+        private readonly IRouteService _routeService;
+        private readonly INotificationService _notification;
 
         // --- Controls ---
         private Label _lblDriverName = null!;
         private Label _lblStatus = null!;
         private Label _lblWallet = null!;
+        private Label _lblIncome = null!;
+        private Label _lblRevenue = null!;
+        private Label _lblVehicleType = null!;
         private Label _lblRating = null!;
         private Button _btnOnline = null!;
         private Button _btnOffline = null!;
+        private Button _btnHistory = null!;
         private DataGridView _dgvTrips = null!;
         private Button _btnAccept = null!;
+        private Button _btnReject = null!;
         private Button _btnStart = null!;
         private Button _btnComplete = null!;
+        private Button _btnRoute = null!;
         private Button _btnRefresh = null!;
         private Button _btnLogout = null!;
         private Label _lblCurrentTrip = null!;
         private Panel _pnlCurrentTrip = null!;
+        private ListBox _lstLog = null!;
 
         // --- State ---
         private Trip? _currentTrip;
+        private readonly HashSet<Guid> _notifiedTripIds = new();
 
         // --- Constants ---
-        private static readonly Color DarkBg = Color.FromArgb(33, 37, 41);
+        private static readonly Color DarkBg = AppTheme.DarkBg;
         private static readonly Color SideText = Color.White;
-        private static readonly Color Blue = Color.FromArgb(13, 110, 253);
-        private static readonly Color BlueHov = Color.FromArgb(0, 90, 220);
-        private static readonly Color Green = Color.FromArgb(25, 135, 84);
-        private static readonly Color GreenHov = Color.FromArgb(20, 110, 68);
-        private static readonly Color Orange = Color.FromArgb(253, 126, 20);
-        private static readonly Color OrangeHov = Color.FromArgb(210, 100, 10);
-        private static readonly Color Red = Color.FromArgb(220, 53, 69);
-        private static readonly Color RedHov = Color.FromArgb(185, 30, 46);
-        private static readonly Color GrayDark = Color.FromArgb(80, 80, 80);
+        private static readonly Color Blue = AppTheme.Primary;
+        private static readonly Color BlueHov = AppTheme.PrimaryHover;
+        private static readonly Color Green = AppTheme.Success;
+        private static readonly Color GreenHov = AppTheme.SuccessHover;
+        private static readonly Color Orange = AppTheme.Warning;
+        private static readonly Color OrangeHov = AppTheme.WarningHover;
+        private static readonly Color Red = AppTheme.Danger;
+        private static readonly Color RedHov = AppTheme.DangerHover;
+        private static readonly Color GrayDark = AppTheme.TextMuted;
 
         public DriverDashboardForm(
             Driver driver,
             ITripService tripService,
-            IUserService userService)
+            IUserService userService,
+            IUserRepository userRepo,
+            IRouteService routeService,
+            INotificationService notification)
         {
             _driver = driver ?? throw new ArgumentNullException(nameof(driver));
             _tripService = tripService ?? throw new ArgumentNullException(nameof(tripService));
             _userService = userService ?? throw new ArgumentNullException(nameof(userService));
+            _userRepo = userRepo ?? throw new ArgumentNullException(nameof(userRepo));
+            _routeService = routeService ?? throw new ArgumentNullException(nameof(routeService));
+            _notification = notification ?? throw new ArgumentNullException(nameof(notification));
 
             InitForm();
             BuildUI();
+            _notification.OnTripUpdated += OnTripUpdated;
+            _notification.OnDriverNotified += OnDriverNotified;
+            Load += async (s, e) =>
+            {
+                if (_dgvTrips != null)
+                    await LoadAvailableTrips();
+            };
 
-            Shown += async (s, e) => await LoadAvailableTrips();
+            FormClosed += (_, _) =>
+            {
+                _notification.OnTripUpdated -= OnTripUpdated;
+                _notification.OnDriverNotified -= OnDriverNotified;
+            };
         }
 
         // ─── Setup ───────────────────────────────────────────────────────────────
@@ -67,7 +96,7 @@ namespace OOP.Presentation
             Size = new Size(1100, 720);
             MinimumSize = new Size(860, 580);
             StartPosition = FormStartPosition.CenterScreen;
-            BackColor = Color.FromArgb(245, 247, 250);
+            BackColor = AppTheme.PageBg;
             Font = new Font("Segoe UI", 10F);
         }
 
@@ -87,7 +116,7 @@ namespace OOP.Presentation
             {
                 Dock = DockStyle.Top,
                 Height = 140,
-                BackColor = Color.FromArgb(24, 27, 31),
+                BackColor = AppTheme.DarkBg,
                 Padding = new Padding(18, 16, 18, 12)
             };
 
@@ -95,23 +124,38 @@ namespace OOP.Presentation
             _lblDriverName.Location = new Point(18, 16);
             _lblDriverName.AutoSize = true;
 
+            _lblVehicleType = MakeSideLabel($"Loại xe: {_driver.Vehicle.Type}", 9.5f);
+            _lblVehicleType.ForeColor = Color.FromArgb(200, 200, 200);
+            _lblVehicleType.Location = new Point(18, 42);
+            _lblVehicleType.AutoSize = true;
+
             _lblWallet = MakeSideLabel($"Ví: {_driver.Wallet:N0} đ", 10.5f);
             _lblWallet.ForeColor = Color.FromArgb(255, 193, 7);
-            _lblWallet.Location = new Point(18, 46);
+            _lblWallet.Location = new Point(18, 64);
             _lblWallet.AutoSize = true;
+
+            _lblIncome = MakeSideLabel($"Thu nhập: {_driver.Income:N0} đ", 9.5f);
+            _lblIncome.ForeColor = Color.FromArgb(180, 180, 180);
+            _lblIncome.Location = new Point(18, 86);
+            _lblIncome.AutoSize = true;
+
+            _lblRevenue = MakeSideLabel("Doanh thu: --", 9.5f);
+            _lblRevenue.ForeColor = Color.FromArgb(180, 180, 180);
+            _lblRevenue.Location = new Point(18, 106);
+            _lblRevenue.AutoSize = true;
 
             _lblRating = MakeSideLabel($"⭐ {_driver.AverageRating:F1}  |  {_driver.TotalTrips} chuyến", 9.5f);
             _lblRating.ForeColor = Color.FromArgb(180, 180, 180);
-            _lblRating.Location = new Point(18, 70);
+            _lblRating.Location = new Point(18, 126);
             _lblRating.AutoSize = true;
 
             _lblStatus = MakeSideLabel(StatusText(_driver.Status), 10, FontStyle.Bold);
             _lblStatus.ForeColor = StatusColor(_driver.Status);
-            _lblStatus.Location = new Point(18, 100);
+            _lblStatus.Location = new Point(18, 148);
             _lblStatus.AutoSize = true;
 
             pnlInfo.Controls.AddRange(new Control[]
-                { _lblDriverName, _lblWallet, _lblRating, _lblStatus });
+                { _lblDriverName, _lblVehicleType, _lblWallet, _lblIncome, _lblRevenue, _lblRating, _lblStatus });
 
             // Online / Offline buttons
             _btnOnline = MakeSideButton("🟢  Online", Green);
@@ -119,6 +163,9 @@ namespace OOP.Presentation
 
             _btnOffline = MakeSideButton("⛔  Offline", GrayDark);
             _btnOffline.Click += async (s, e) => await OnOfflineClicked();
+
+            _btnHistory = MakeSideButton("🕒  Lịch sử", Blue);
+            _btnHistory.Click += (_, _) => OpenDriverHistory();
 
             // Separator label
             var lblSep = new Label
@@ -141,6 +188,7 @@ namespace OOP.Presentation
 
             sidebar.Controls.Add(_btnLogout);   // Bottom first
             sidebar.Controls.Add(lblSep);
+            sidebar.Controls.Add(_btnHistory);
             sidebar.Controls.Add(_btnOffline);
             sidebar.Controls.Add(_btnOnline);
             sidebar.Controls.Add(pnlInfo);
@@ -153,29 +201,35 @@ namespace OOP.Presentation
             {
                 Dock = DockStyle.Top,
                 Height = 50,
-                BackColor = Color.White,
+                BackColor = AppTheme.CardBg,
                 Padding = new Padding(8, 6, 8, 6)
             };
 
             _btnRefresh = MakeActionButton("🔄  Làm mới", Blue);
             _btnAccept = MakeActionButton("✅  Nhận cuốc", Green);
+            _btnReject = MakeActionButton("❌  Từ chối", Red);
             _btnStart = MakeActionButton("🚗  Bắt đầu", Orange);
             _btnComplete = MakeActionButton("🏁  Hoàn thành", Color.FromArgb(102, 16, 242));
+            _btnComplete.BackColor = AppTheme.Accent;
+            _btnRoute = MakeActionButton("🗺  Lộ trình", AppTheme.Primary);
 
             HoverEffect(_btnRefresh, Blue, BlueHov);
             HoverEffect(_btnAccept, Green, GreenHov);
+            HoverEffect(_btnReject, Red, RedHov);
             HoverEffect(_btnStart, Orange, OrangeHov);
 
             _btnRefresh.Click += async (s, e) => await OnRefreshClicked();
             _btnAccept.Click += async (s, e) => await OnAcceptTripClicked();
+            _btnReject.Click += async (s, e) => await OnRejectTripClicked();
             _btnStart.Click += async (s, e) => await OnStartTripClicked();
             _btnComplete.Click += async (s, e) => await OnCompleteTripClicked();
+            _btnRoute.Click += (s, e) => OnViewRouteClicked();
 
             // Chỉ hiện nút phù hợp với trạng thái
             UpdateTripButtons();
 
             toolbar.Controls.AddRange(new Control[]
-                { _btnRefresh, _btnAccept, _btnStart, _btnComplete });
+                { _btnRefresh, _btnAccept, _btnReject, _btnStart, _btnComplete, _btnRoute });
 
             // Trip grid
             _dgvTrips = new DataGridView
@@ -184,7 +238,7 @@ namespace OOP.Presentation
                 ReadOnly = true,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
                 RowHeadersVisible = false,
-                BackgroundColor = Color.White,
+                BackgroundColor = AppTheme.CardBg,
                 BorderStyle = BorderStyle.None,
                 SelectionMode = DataGridViewSelectionMode.FullRowSelect,
                 AllowUserToAddRows = false,
@@ -209,7 +263,7 @@ namespace OOP.Presentation
             {
                 Dock = DockStyle.Bottom,
                 Height = 80,
-                BackColor = Color.FromArgb(230, 245, 255),
+                BackColor = AppTheme.Highlight,
                 Padding = new Padding(12, 8, 12, 8),
                 Visible = false
             };
@@ -224,8 +278,19 @@ namespace OOP.Presentation
             };
             _pnlCurrentTrip.Controls.Add(_lblCurrentTrip);
 
+            _lstLog = new ListBox
+            {
+                Dock = DockStyle.Bottom,
+                Height = 100,
+                Font = new Font("Segoe UI", 8.5f),
+                ForeColor = Color.FromArgb(70, 70, 70),
+                BorderStyle = BorderStyle.None,
+                BackColor = Color.FromArgb(248, 249, 250)
+            };
+
             main.Controls.Add(_dgvTrips);
             main.Controls.Add(_pnlCurrentTrip);
+            main.Controls.Add(_lstLog);
             main.Controls.Add(toolbar);
 
             Controls.Add(main);
@@ -294,9 +359,28 @@ namespace OOP.Presentation
                     $"Đến: {_currentTrip?.DestinationLocation.Address}",
                     "Nhận cuốc thành công",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                // Mở ngay DriverTripForm để xem map
+                OnViewRouteClicked();
             }
             catch (InvalidOperationException ex) { ShowError(ex.Message); }
             catch (Exception ex) { ShowError($"Lỗi hệ thống: {ex.Message}"); }
+        }
+
+        private async Task OnRejectTripClicked()
+        {
+            var tripId = GetSelectedTripId();
+            if (tripId == null) return;
+
+            if (MessageBox.Show("Bạn muốn từ chối chuyến này?",
+                "Xác nhận", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+
+            try
+            {
+                await _tripService.RejectTrip(tripId.Value, _driver.Id, "Tài xế từ chối");
+                await LoadAvailableTrips();
+            }
+            catch (Exception ex) { ShowError(ex.Message); }
         }
 
         private async Task OnStartTripClicked()
@@ -359,7 +443,7 @@ namespace OOP.Presentation
                 if (updatedUser is Driver updatedDriver)
                 {
                     // Sync lại các giá trị hiển thị
-                    _driver.UpdateLocation(_driver.CurrentLocation); // trigger no-op để force
+                    _driver.UpdateLocation(_driver.Position); // trigger no-op để force
                 }
 
                 _currentTrip = null;
@@ -377,7 +461,7 @@ namespace OOP.Presentation
             catch (Exception ex) { ShowError($"Lỗi hoàn thành chuyến: {ex.Message}"); }
         }
 
-        private void OnLogoutClicked(object? sender, EventArgs e)
+        private async void OnLogoutClicked(object? sender, EventArgs e)
         {
             if (_currentTrip != null)
             {
@@ -391,7 +475,15 @@ namespace OOP.Presentation
                 "Xác nhận", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
 
             if (confirm == DialogResult.Yes)
+            {
+                try
+                {
+                    _driver.SetOffline();
+                    await PersistDriverStatus();
+                }
+                catch { /* ignore */ }
                 Close();
+            }
         }
 
         // ─── Data loading ─────────────────────────────────────────────────────────
@@ -407,19 +499,19 @@ namespace OOP.Presentation
 
             try
             {
-                // Lấy toàn bộ trip history của driver + trip đang Requested chưa có driver
-                // Note: ITripService chưa có GetAvailableTrips() — dùng GetTripHistory
-                // và filter Requested + chưa có DriverId, đúng loại xe
+                var availableTrips = await _tripService.GetAvailableTripsForDriver(_driver.Id);
                 var allDriverTrips = await _tripService.GetTripHistory(_driver.Id);
+
+                _notifiedTripIds.IntersectWith(availableTrips.Select(t => t.Id));
 
                 _dgvTrips.Rows.Clear();
 
-                // Hiện chuyến đang được gán cho driver này (Matched/Arrived/Ongoing)
+                // Hiện chuyến đang được gán cho driver này (Matched/Arrived/Started)
                 var myActiveTrips = allDriverTrips
                     .Where(t => t.DriverId == _driver.Id &&
                                (t.Status == TripStatus.Matched ||
                                 t.Status == TripStatus.Arrived ||
-                                t.Status == TripStatus.Ongoing))
+                                t.Status == TripStatus.Started))
                     .ToList();
 
                 // Nếu đang có trip active → set _currentTrip
@@ -429,8 +521,30 @@ namespace OOP.Presentation
                 foreach (var t in myActiveTrips)
                     AddTripRow(t, isCurrentTrip: true);
 
+                // Requested trips phù hợp loại xe để driver nhận
+                foreach (var t in availableTrips)
+                    AddTripRow(t, isCurrentTrip: false);
+
+                // Popup thông báo chuyến mới khi Available
+                if (_driver.Status == DriverStatus.Available)
+                {
+                    bool hasNew = false;
+                    foreach (var t in availableTrips)
+                    {
+                        if (_notifiedTripIds.Contains(t.Id)) continue;
+                        _notifiedTripIds.Add(t.Id);
+                        hasNew = true;
+                        AddLogEntry(
+                            $"Chuyến mới: {t.PickupLocation.Address} → {t.DestinationLocation.Address} " +
+                            $"| {t.VehicleType} | {(t.Distance > 0 ? $"{t.Distance:F1} km" : "—")}");
+                    }
+                    if (hasNew)
+                        System.Media.SystemSounds.Asterisk.Play();
+                }
+
                 UpdateCurrentTripPanel();
                 UpdateTripButtons();
+                UpdateRevenueSummary(allDriverTrips);
             }
             catch (Exception ex) { ShowError(ex.Message); }
         }
@@ -460,6 +574,8 @@ namespace OOP.Presentation
                 t.Fare > 0 ? $"{t.Fare:N0} đ" : "–",
                 StatusLabel(t.Status));
 
+            _dgvTrips.Rows[rowIdx].Tag = t.Status;
+
             if (isCurrentTrip)
             {
                 _dgvTrips.Rows[rowIdx].DefaultCellStyle.BackColor = Color.FromArgb(230, 245, 255);
@@ -474,11 +590,30 @@ namespace OOP.Presentation
             _lblStatus.Text = StatusText(_driver.Status);
             _lblStatus.ForeColor = StatusColor(_driver.Status);
             _lblWallet.Text = $"Ví: {_driver.Wallet:N0} đ";
+            _lblIncome.Text = $"Thu nhập: {_driver.Income:N0} đ";
             _lblRating.Text = $"⭐ {_driver.AverageRating:F1}  |  {_driver.TotalTrips} chuyến";
+            _lblVehicleType.Text = $"Loại xe: {_driver.Vehicle.Type}";
 
             bool isOnline = _driver.Status != DriverStatus.Offline;
             _btnOnline.Enabled = !isOnline;
             _btnOffline.Enabled = isOnline;
+        }
+
+        private void UpdateRevenueSummary(List<Trip> history)
+        {
+            var completed = history.Where(t => t.Status == TripStatus.Completed).ToList();
+            var totalRevenue = completed.Sum(t => t.Fare);
+            _lblRevenue.Text = $"Doanh thu: {totalRevenue:N0} đ";
+        }
+
+        private void OpenDriverHistory()
+        {
+            using var form = new TripHistoryForm(_driver.Id, _tripService, _userRepo);
+            form.StartPosition = FormStartPosition.CenterParent;
+            Hide();
+            form.ShowDialog(this);
+            Show();
+            Focus();
         }
 
         private void UpdateCurrentTripPanel()
@@ -492,15 +627,19 @@ namespace OOP.Presentation
             _pnlCurrentTrip.Visible = true;
             _lblCurrentTrip.Text =
                 $"🚗 Chuyến hiện tại  [{StatusLabel(_currentTrip.Status)}]   " +
-                $"Đón: {_currentTrip.PickupLocation.Label}  →  " +
-                $"Đến: {_currentTrip.DestinationLocation.Label}   " +
+                $"Đón: {_currentTrip.PickupLocation.Name}  →  " +
+                $"Đến: {_currentTrip.DestinationLocation.Name}   " +
                 $"Cước: {(_currentTrip.Fare > 0 ? _currentTrip.Fare.ToString("N0") + " đ" : "Chưa tính")}";
         }
 
         // Ẩn/hiện nút theo trạng thái
         private void UpdateTripButtons()
         {
+            if (_dgvTrips == null || _btnAccept == null || _btnReject == null || _btnStart == null || _btnComplete == null || _btnRoute == null)
+                return;
+
             bool hasSelection = _dgvTrips.CurrentRow != null;
+            var selectedStatus = _dgvTrips.CurrentRow?.Tag is TripStatus ts ? ts : (TripStatus?)null;
             var tripStatus = _currentTrip?.Status;
 
             // Accept: có dòng được chọn, chưa có trip hiện tại, driver Available
@@ -508,12 +647,20 @@ namespace OOP.Presentation
                               && _driver.Status == DriverStatus.Available
                               && hasSelection;
 
+            // Reject: chỉ khi chọn trip Requested và chưa có trip hiện tại
+            bool selectedIsRequested = selectedStatus == TripStatus.Requested
+                                    || selectedStatus == TripStatus.Searching;
+            _btnReject.Visible = _currentTrip == null
+                              && _driver.Status == DriverStatus.Available
+                              && selectedIsRequested;
+
             // Start: đang có trip Matched hoặc Arrived
             _btnStart.Visible = tripStatus == TripStatus.Matched
                              || tripStatus == TripStatus.Arrived;
 
-            // Complete: đang Ongoing
-            _btnComplete.Visible = tripStatus == TripStatus.Ongoing;
+            // Complete: đang Started
+            _btnComplete.Visible = tripStatus == TripStatus.Started;
+            _btnRoute.Visible = hasSelection || _currentTrip != null;
 
             // Đổi text của Start theo trạng thái
             if (_btnStart.Visible)
@@ -522,13 +669,67 @@ namespace OOP.Presentation
                     : "🚗  Bắt đầu chuyến";
         }
 
+        private void OnViewRouteClicked()
+        {
+            var selected = GetSelectedTripId();
+            var tripId = selected ?? _currentTrip?.Id;
+            if (tripId == null)
+            {
+                MessageBox.Show("Chưa chọn chuyến đi.", "Thông báo",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using var form = new DriverTripForm(
+                tripId.Value,
+                _driver.Id,
+                _tripService,
+                _routeService,
+                _userService);
+            form.StartPosition = FormStartPosition.CenterParent;
+            form.ShowDialog(this);
+        }
+
+        private async void OnTripUpdated(Guid tripId, string message)
+        {
+            try
+            {
+                var trip = await _tripService.GetTrip(tripId);
+                if (trip?.DriverId != _driver.Id) return;
+
+                if (InvokeRequired)
+                {
+                    BeginInvoke(() => OnTripUpdated(tripId, message));
+                    return;
+                }
+
+                AddLogEntry(message);
+            }
+            catch { }
+        }
+
+        private void OnDriverNotified(Guid driverId, string message)
+        {
+            if (driverId != _driver.Id) return;
+            if (InvokeRequired) { BeginInvoke(() => OnDriverNotified(driverId, message)); return; }
+
+            AddLogEntry(message);
+        }
+
+        private void AddLogEntry(string message)
+        {
+            if (_lstLog == null) return;
+            if (InvokeRequired) { BeginInvoke(() => AddLogEntry(message)); return; }
+
+            if (_lstLog.Items.Count >= 200) _lstLog.Items.RemoveAt(0);
+            _lstLog.Items.Add($"[{DateTime.Now:HH:mm}] {message}");
+            _lstLog.TopIndex = _lstLog.Items.Count - 1;
+        }
+
         // Persist trạng thái driver qua UserService (để lưu vào storage)
         private async Task PersistDriverStatus()
         {
-            // UserService không có UpdateDriverStatus() riêng
-            // — gọi UpdateUserProfile với thông tin hiện tại để trigger Save()
-            // Trong app thật nên thêm method UpdateDriverStatus vào IUserService
-            await _userService.UpdateUserProfile(_driver.Id, _driver.Name, _driver.Phone);
+            await _userService.UpdateDriverStatus(_driver.Id, _driver.Status);
         }
 
         // ─── Grid helpers ─────────────────────────────────────────────────────────
@@ -638,11 +839,13 @@ namespace OOP.Presentation
         private static string StatusLabel(TripStatus status) => status switch
         {
             TripStatus.Requested => "⏳ Chờ tài xế",
+            TripStatus.Searching => "🔎 Đang tìm",
             TripStatus.Matched => "🤝 Đã nhận",
             TripStatus.Arrived => "📍 Đã đến nơi đón",
-            TripStatus.Ongoing => "🚗 Đang chạy",
+            TripStatus.Started => "🚗 Đang chạy",
             TripStatus.Completed => "✅ Hoàn thành",
             TripStatus.Cancelled => "❌ Đã hủy",
+            TripStatus.Timeout => "⌛ Hết thời gian",
             _ => status.ToString()
         };
 
@@ -650,3 +853,4 @@ namespace OOP.Presentation
             MessageBox.Show(message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
     }
 }
+

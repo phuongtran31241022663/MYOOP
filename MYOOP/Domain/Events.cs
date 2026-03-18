@@ -1,4 +1,4 @@
-﻿using OOP.Domain.Entities;
+﻿﻿using OOP.Domain.Entities;
 using DomainLocation = OOP.Domain.Entities.Location;
 
 namespace OOP.Domain.Events

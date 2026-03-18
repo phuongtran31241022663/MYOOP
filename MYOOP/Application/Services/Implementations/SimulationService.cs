@@ -1,166 +1,142 @@
-using OOP.Application.Interfaces;
-using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
+using OOP.Application.Services.Interfaces;
+using OOP.Infrastructure.Map;
 
 namespace OOP.Application.Services
 {
     public class SimulationService : ISimulationService
     {
-        private readonly IUserRepository _userRepo;
         private readonly ITripRepository _tripRepo;
-        private readonly INotificationService _notificationService;
-        private readonly ITripService _tripService;
+        private readonly IUserRepository _userRepo;
         private readonly IRouteService _routeService;
+        private readonly ITripService _tripService;
 
-        // Bước di chuyển mỗi lần simulate (độ — ~0.001° ≈ 100m)
-        private const double StepDegrees = 0.001;
-
-        private static readonly Random _rng = new();
+        private readonly Dictionary<Guid, (Guid driverId, MapRouteResult route, int index, bool toPickup)> _simulations
+            = new();
 
         public SimulationService(
             IUserRepository userRepo,
             ITripRepository tripRepo,
-            INotificationService notificationService,
+            INotificationService _,
             ITripService tripService,
             IRouteService routeService)
         {
-            _userRepo = userRepo ?? throw new ArgumentNullException(nameof(userRepo));
-            _tripRepo = tripRepo ?? throw new ArgumentNullException(nameof(tripRepo));
-            _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
-            _tripService = tripService ?? throw new ArgumentNullException(nameof(tripService));
-            _routeService = routeService ?? throw new ArgumentNullException(nameof(routeService));
+            _tripRepo = tripRepo;
+            _userRepo = userRepo;
+            _routeService = routeService;
+            _tripService = tripService;
         }
 
-        // --- 1. Cập nhật vị trí tất cả tài xế Available và Busy ---
-        public async Task UpdateDriverLocations()
+        // DRIVER → PICKUP
+        public async Task SimulateDriverToPickup(Guid tripId)
         {
-            var users = await _userRepo.GetAll();
+            if (_simulations.ContainsKey(tripId)) return;
 
-            var activeDrivers = users
-                .OfType<Driver>()
-                .Where(d => d.IsActive &&
-                           (d.Status == DriverStatus.Available || d.Status == DriverStatus.Busy))
-                .ToList();
+            var trip = await _tripRepo.GetById(tripId)
+                ?? throw new Exception("Trip not found");
 
-            foreach (var driver in activeDrivers)
-                await SimulateDriverMovement(driver.Id);
+            if (!trip.DriverId.HasValue)
+                throw new Exception("Trip chưa có driver.");
+
+            var driver = await _userRepo.GetById(trip.DriverId.Value) as Driver
+                ?? throw new Exception("Driver not found");
+
+            var route = await _routeService.GetFullRouteAsync(
+                driver.Position,
+                trip.PickupLocation);
+
+            if (route == null || route.Points.Count < 2)
+                throw new Exception("Không lấy được route.");
+
+            _simulations[tripId] = (driver.Id, route, 0, true);
         }
 
-        // --- 2. Di chuyển một tài xế theo hướng ngẫu nhiên ---
-        public async Task SimulateDriverMovement(Guid driverId)
+        // PICKUP → DESTINATION
+        public async Task SimulateTripToDestination(Guid tripId)
         {
-            var user = await _userRepo.GetById(driverId);
-            if (user is not Driver driver) return;
+            if (_simulations.ContainsKey(tripId)) return;
 
-            if (driver.Status == DriverStatus.Busy)
+            var trip = await _tripRepo.GetById(tripId)
+                ?? throw new Exception("Trip not found");
+
+            if (!trip.DriverId.HasValue)
+                throw new Exception("Trip chưa có driver.");
+
+            var route = await _routeService.GetFullRouteAsync(
+                trip.PickupLocation,
+                trip.DestinationLocation);
+
+            if (route == null || route.Points.Count < 2)
+                throw new Exception("Không lấy được route.");
+
+            _simulations[tripId] = (trip.DriverId.Value, route, 0, false);
+        }
+
+        // TICK LOOP
+        public async Task Tick()
+        {
+            foreach (var key in _simulations.Keys.ToList())
             {
-                await MoveDriverTowardActiveTrip(driver);
-                return;
+                var sim = _simulations[key];
+
+                var driver = await _userRepo.GetById(sim.driverId) as Driver;
+                if (driver == null) continue;
+
+                if (sim.index >= sim.route.Points.Count)
+                {
+                    await HandleArrival(key, sim.toPickup);
+                    continue;
+                }
+
+                var point = sim.route.Points[sim.index];
+
+                driver.UpdateLocation(point);
+
+                await _userRepo.Update(driver);
+
+                _simulations[key] = (sim.driverId, sim.route, sim.index + 1, sim.toPickup);
+            }
+        }
+
+        private async Task HandleArrival(Guid tripId, bool toPickup)
+        {
+            if (toPickup)
+            {
+                await _tripService.MarkArrived(tripId);
+            }
+            else
+            {
+                await _tripService.CompleteTrip(tripId);
             }
 
-            var newLocation = RandomStep(driver.CurrentLocation);
-            driver.UpdateLocation(newLocation);
-            await _userRepo.Update(driver);
+            _simulations.Remove(tripId);
         }
 
-        // --- 3. Tự động tiến trình một trip đang Ongoing ---
+        public Task StopSimulation(Guid tripId)
+        {
+            _simulations.Remove(tripId);
+            return Task.CompletedTask;
+        }
+
+        // Adapter methods used by Program.cs
+        public async Task UpdateDriverLocations()
+        {
+            await Tick();
+        }
+
         public async Task SimulateTripProgress(Guid tripId)
         {
             var trip = await _tripRepo.GetById(tripId);
             if (trip == null) return;
 
-            switch (trip.Status)
-            {
-                case TripStatus.Matched:
-                    await _tripService.MarkArrived(tripId);
-                    await _notificationService.NotifyTripUpdate(
-                        tripId, "[Simulation] Tài xế đã đến điểm đón.");
-                    break;
-
-                case TripStatus.Arrived:
-                    await _tripService.StartTrip(tripId);
-                    await _notificationService.NotifyTripUpdate(
-                        tripId, "[Simulation] Chuyến đi đã bắt đầu.");
-                    break;
-
-                case TripStatus.Ongoing:
-                    if (trip.Distance <= 0)
-                    {
-                        var routeResult = await _routeService.GetFullRouteAsync(
-                            trip.PickupLocation,
-                            trip.DestinationLocation);
-
-                        if (routeResult != null)
-                        {
-                            trip.ApplyDistance(routeResult.Distance);
-                            await _tripRepo.Update(trip);
-                        }
-                        else
-                        {
-                            throw new InvalidOperationException("Không thể tìm thấy lộ trình đường bộ cho chuyến đi này.");
-                        }
-                    }
-
-                    await _tripService.CompleteTrip(tripId);
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        // --- Helpers ---
-
-        private async Task MoveDriverTowardActiveTrip(Driver driver)
-        {
-            var trips = await _tripRepo.GetByDriverId(driver.Id);
-
-            var activeTrip = trips.FirstOrDefault(t =>
-                t.Status == TripStatus.Matched ||
-                t.Status == TripStatus.Arrived ||
-                t.Status == TripStatus.Ongoing);
-
-            if (activeTrip == null)
-            {
-                driver.UpdateLocation(RandomStep(driver.CurrentLocation));
-                await _userRepo.Update(driver);
-                return;
-            }
-
-            var target = activeTrip.Status == TripStatus.Ongoing
-                ? activeTrip.DestinationLocation
-                : activeTrip.PickupLocation;
-
-            var newLocation = StepToward(driver.CurrentLocation, target);
-            driver.UpdateLocation(newLocation);
-            await _userRepo.Update(driver);
-        }
-
-        private static Location StepToward(Location current, Location target)
-        {
-            double dLat = target.Lat - current.Lat;
-            double dLng = target.Lng - current.Lng;
-            double dist = Math.Sqrt(dLat * dLat + dLng * dLng);
-
-            if (dist < StepDegrees)
-                return current;
-
-            double newLat = current.Lat + (dLat / dist) * StepDegrees;
-            double newLng = current.Lng + (dLng / dist) * StepDegrees;
-
-            return new Location(current.Label, current.Address, newLat, newLng);
-        }
-
-        private static Location RandomStep(Location current)
-        {
-            double dLat = (_rng.NextDouble() - 0.5) * 2 * StepDegrees;
-            double dLng = (_rng.NextDouble() - 0.5) * 2 * StepDegrees;
-
-            double newLat = Math.Clamp(current.Lat + dLat, -90, 90);
-            double newLng = Math.Clamp(current.Lng + dLng, -180, 180);
-
-            return new Location(current.Label, current.Address, newLat, newLng);
+            if (trip.Status == TripStatus.Matched)
+                await SimulateDriverToPickup(tripId);
+            else if (trip.Status == TripStatus.Started)
+                await SimulateTripToDestination(tripId);
+            else if (trip.Status == TripStatus.Completed || trip.Status == TripStatus.Cancelled)
+                await StopSimulation(tripId);
         }
     }
 }

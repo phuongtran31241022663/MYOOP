@@ -1,4 +1,4 @@
-﻿using OOP.Domain.Entities;
+﻿﻿using OOP.Domain.Entities;
 namespace OOP.Domain.Interfaces
 {
     public interface IUserRepository

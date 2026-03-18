@@ -1,11 +1,11 @@
-﻿using OOP.Domain.Entities;
+﻿﻿using OOP.Domain.Entities;
 using OOP.Domain.Enums;
 
 namespace OOP.Application.Validators
 {
     public static class FareRuleValidator
     {
-        public static void ValidateRule(FareRule rule)
+        public static void ValidateRule(Fare rule)
         {
             if (rule == null)
                 throw new ArgumentNullException(nameof(rule));

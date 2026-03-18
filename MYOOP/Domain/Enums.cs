@@ -1,4 +1,4 @@
-﻿namespace OOP.Domain.Enums
+﻿﻿namespace OOP.Domain.Enums
 {
     public enum UserRole
     {
@@ -14,20 +14,20 @@
     }
     public enum TripStatus
     {
-        Requested,
-        Matched,
-        Arrived,
-        Ongoing,
-        Completed,
-        Cancelled
+        Requested = 0,
+        Matched = 1,
+        Arrived = 2,
+        Started = 3,
+        Completed = 4,
+        Cancelled = 5,
+        Searching = 6,
+        Timeout = 7
     }
     public enum VehicleType
     {
         Motorbike,
         Car
     }
-    // FIX: Chỉ giữ Unpaid và Paid — hệ thống chỉ hỗ trợ thanh toán tiền mặt,
-    // không có giao dịch điện tử nên trạng thái Failed không có ý nghĩa.
     public enum PaymentStatus
     {
         Unpaid,

@@ -1,4 +1,4 @@
-﻿using System.Drawing.Drawing2D;
+﻿﻿using System.Drawing.Drawing2D;
 
 namespace OOP.Presentation
 {
@@ -8,6 +8,8 @@ namespace OOP.Presentation
     /// </summary>
     public static class FormHelper
     {
+        private static readonly Color InputBorder = Color.FromArgb(210, 214, 221);
+
         // ── Factory methods ──────────────────────────────────────────────────
 
         public static Label MakeLabel(
@@ -35,7 +37,9 @@ namespace OOP.Presentation
                 PlaceholderText = placeholder,
                 UseSystemPasswordChar = isPassword,
                 BorderStyle = BorderStyle.FixedSingle,
-                Font = new Font("Segoe UI", 10.5f)
+                Font = new Font("Segoe UI", 10.5f),
+                BackColor = Color.White,
+                ForeColor = AppTheme.TextPrimary
             };
         }
 
@@ -87,6 +91,33 @@ namespace OOP.Presentation
 
             AttachHover(btn, Color.White, Color.FromArgb(245, 245, 245));
             return btn;
+        }
+
+        /// <summary>
+        /// Tạo panel dạng card với bo góc và viền mảnh.
+        /// </summary>
+        public static Panel MakeCard(int width, int height, int radius = AppTheme.CardRadius)
+        {
+            var p = new Panel
+            {
+                Width = width,
+                Height = height,
+                BackColor = AppTheme.CardBg,
+                Padding = new Padding(0)
+            };
+            p.Paint += RoundedBorderPainter(radius, AppTheme.BorderLight);
+            return p;
+        }
+
+        /// <summary>
+        /// Tạo TextBox với chiều cao cố định và border nhã.
+        /// </summary>
+        public static TextBox MakeInputSized(string placeholder, int width, int height = AppTheme.InputHeight)
+        {
+            var tb = MakeInput(placeholder);
+            tb.Width = width;
+            tb.Height = height;
+            return tb;
         }
 
         // ── Layout ───────────────────────────────────────────────────────────

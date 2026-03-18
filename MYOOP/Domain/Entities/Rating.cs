@@ -1,4 +1,4 @@
-﻿using OOP.Application.Validators;
+﻿﻿using OOP.Application.Validators;
 using System.Runtime.Serialization;
 
 namespace OOP.Domain.Entities

@@ -1,8 +1,7 @@
-using OOP.Domain.Entities;
-using OOP.Infrastructure.Map;
+﻿﻿using OOP.Domain.Entities;
 using OOP.Application.Services.Interfaces;
 
-namespace OOP.Application.Services.Implementations
+namespace OOP.Infrastructure.Map
 {
     public class RouteService : IRouteService
     {
@@ -16,7 +15,12 @@ namespace OOP.Application.Services.Implementations
         public async Task<double> CalculateDistanceAsync(Location start, Location end)
         {
             var result = await _mapProvider.GetRouteAsync(start, end);
-            return result?.Distance ?? double.MaxValue;
+
+            if (result == null)
+                throw new InvalidOperationException(
+                    $"Không thể tính lộ trình từ [{start}] đến [{end}].");
+
+            return result.Distance;
         }
 
         public async Task<List<Location>> GetRoutePointsAsync(Location start, Location end)

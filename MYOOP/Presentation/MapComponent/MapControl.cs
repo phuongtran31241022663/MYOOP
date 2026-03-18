@@ -1,4 +1,4 @@
-﻿using GMap.NET;
+﻿﻿﻿using GMap.NET;
 using GMap.NET.MapProviders;
 using GMap.NET.WindowsForms;
 using GMap.NET.WindowsForms.Markers;
@@ -9,7 +9,7 @@ using DomainLocation = OOP.Domain.Entities.Location;
 
 namespace OOP.Presentation.Map
 {
-    public class MapControl : Form
+    public class MapControl : UserControl
     {
         // ── GMap control ──────────────────────────────────────────────────────
         public GMapControl gmap = null!;
@@ -35,15 +35,7 @@ namespace OOP.Presentation.Map
         private readonly Dictionary<string, GMarkerGoogle> driverMarkers = new();
         private readonly Dictionary<string, System.Windows.Forms.Timer> animationTimers = new();
         private const int AnimationSteps = 20;
-        private const int AnimationInterval = 50;   // ms
-
-        // ── Search UI ─────────────────────────────────────────────────────────
-        private TextBox txtSearch = null!;
-        private ListBox lstSuggestions = null!;
-        private System.Windows.Forms.Timer searchTimer = null!;
-        private CancellationTokenSource? cts;
-        private readonly List<string> searchHistory = new();
-        private const int MaxHistory = 5;
+        private const int AnimationInterval = 50; // ms
 
         // ── POI ───────────────────────────────────────────────────────────────
         private bool poiLoading = false;
@@ -62,16 +54,36 @@ namespace OOP.Presentation.Map
         private DateTime _lastNominatimCall = DateTime.MinValue;
         private const int NominatimIntervalMs = 1100;
 
-        // ── Geocode cache (reverse only; forward autocomplete via Photon) ─────
+        // ── HCMC bounds (approx) ─────────────────────────────────────────────
+        private static readonly double HcmMinLat = 10.35;
+        private static readonly double HcmMaxLat = 11.20;
+        private static readonly double HcmMinLng = 106.40;
+        private static readonly double HcmMaxLng = 107.10;
+
+        // ── Geocode cache ─────────────────────────────────────────────────────
         private readonly Dictionary<string, string> reverseCache = new();
+        private const int MaxCacheSize = 500;
+
+        // ── Static GDI resources for tooltip (app-lifetime, never leaked) ─────
+        private static readonly SolidBrush TooltipFillBrush = new(Color.FromArgb(230, 40, 40, 40));
+        private static readonly Font TooltipFont = new("Segoe UI", 9, FontStyle.Bold);
+        private static readonly Pen TooltipStrokePen = new(Color.White, 1);
 
         // ── Events ────────────────────────────────────────────────────────────
-        /// <summary>Phát ra khi người dùng chọn điểm đến (search hoặc right-click).</summary>
-        public event Action<PointLatLng, string>? LocationSelected;
+        public event Action<PointLatLng, string, bool>? LocationSelected;
+        private Func<bool>? _isPickupSelector;
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public bool AllowLeftClickSelect { get; set; } = false;
 
-        // ═════════════════════════════════════════════════════════════════════
-        // Static init — gọi từ Program.cs TRƯỚC Application.Run()
-        // ═════════════════════════════════════════════════════════════════════
+        public void SetPickupSelector(Func<bool> selector)
+        {
+            _isPickupSelector = selector;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Static init
+        // ─────────────────────────────────────────────────────────────────────
         public static void InitializeMapProvider()
         {
             GMapProvider.UserAgent =
@@ -81,9 +93,9 @@ namespace OOP.Presentation.Map
             GMaps.Instance.Mode = AccessMode.ServerAndCache;
         }
 
-        // ═════════════════════════════════════════════════════════════════════
+        // ─────────────────────────────────────────────────────────────────────
         // Constructor
-        // ═════════════════════════════════════════════════════════════════════
+        // ─────────────────────────────────────────────────────────────────────
         public MapControl(HttpClient http, IRouteService routeService)
         {
             _http = http ?? throw new ArgumentNullException(nameof(http));
@@ -92,11 +104,7 @@ namespace OOP.Presentation.Map
             if (!_http.DefaultRequestHeaders.Contains("User-Agent"))
                 _http.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 RideGoApp/1.0");
 
-            TopLevel = false;
-            FormBorderStyle = FormBorderStyle.None;
-
             InitMap();
-            InitSearch();
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -122,7 +130,6 @@ namespace OOP.Presentation.Map
             gmap.MarkersEnabled = true;
             gmap.RoutesEnabled = true;
 
-            // Thứ tự add = thứ tự render từ dưới lên
             gmap.Overlays.Add(routeOverlay);
             gmap.Overlays.Add(driverRouteOverlay);
             gmap.Overlays.Add(poiOverlay);
@@ -130,143 +137,103 @@ namespace OOP.Presentation.Map
             gmap.Overlays.Add(pickupOverlay);
             gmap.Overlays.Add(dropoffOverlay);
 
-            gmap.OnMapDrag += async () => await LoadPOI(gmap.Position);
-            gmap.OnMapZoomChanged += async () => await LoadPOI(gmap.Position);
+            gmap.OnMapDrag += async () =>
+            {
+                ClampMapToHcm();
+                await LoadPOI(gmap.Position);
+            };
+            gmap.OnMapZoomChanged += async () =>
+            {
+                ClampMapToHcm();
+                await LoadPOI(gmap.Position);
+            };
 
             gmap.MouseDown += MapMouseDown;
             gmap.MouseMove += MapMouseMove;
             gmap.MouseUp += MapMouseUp;
-            gmap.MouseClick += MapMouseClick;
+            // Right-click handled in MapMouseUp → HandleRightClickAsync.
+            // MapMouseClick is NOT registered — GMap fires MouseClick before
+            // MouseUp in some internal WndProc paths, causing double-fire.
 
             Controls.Add(gmap);
         }
 
         // ═════════════════════════════════════════════════════════════════════
-        // Search UI
+        // Autocomplete / suggestions
         // ═════════════════════════════════════════════════════════════════════
-        private void InitSearch()
+        private async Task<List<DomainLocation>> PhotonAutocomplete(string query)
         {
-            txtSearch = new TextBox
-            {
-                Width = 350,
-                Location = new Point(15, 15),
-                PlaceholderText = "Nhập điểm đến của bạn...",
-                Font = new Font("Segoe UI", 11)
-            };
-
-            lstSuggestions = new ListBox
-            {
-                Width = 350,
-                Height = 200,
-                Location = new Point(15, 46),
-                Visible = false,
-                Font = new Font("Segoe UI", 10),
-                BorderStyle = BorderStyle.FixedSingle
-            };
-
-            searchTimer = new System.Windows.Forms.Timer { Interval = 500 };
-            searchTimer.Tick += async (_, _) =>
-            {
-                searchTimer.Stop();
-                if (IsDisposed || txtSearch.IsDisposed) return;
-                await RunSearch(cts?.Token ?? CancellationToken.None);
-            };
-
-            txtSearch.TextChanged += OnSearchTextChanged;
-            txtSearch.Click += OnSearchBoxClick;
-            lstSuggestions.MouseClick += OnSuggestionClick;
-
-            Controls.Add(lstSuggestions);
-            Controls.Add(txtSearch);
-            txtSearch.BringToFront();
-        }
-
-        private void OnSearchTextChanged(object? sender, EventArgs e)
-        {
-            cts?.Cancel();
-            cts = new CancellationTokenSource();
-            searchTimer.Stop();
-            if (string.IsNullOrWhiteSpace(txtSearch.Text))
-            { lstSuggestions.Visible = false; return; }
-            if (txtSearch.Text.Trim().Length >= 3) searchTimer.Start();
-        }
-
-        private void OnSearchBoxClick(object? sender, EventArgs e)
-        {
-            if (searchHistory.Count == 0) return;
-            lstSuggestions.BeginUpdate();
-            lstSuggestions.Items.Clear();
-            foreach (var s in searchHistory) lstSuggestions.Items.Add(s);
-            lstSuggestions.EndUpdate();
-            lstSuggestions.Visible = true;
-            lstSuggestions.BringToFront();
-        }
-
-        private async void OnSuggestionClick(object? sender, MouseEventArgs e)
-        {
-            int idx = lstSuggestions.IndexFromPoint(e.Location);
-            if (idx < 0) return;
-
-            string address = lstSuggestions.Items[idx].ToString()!;
-            txtSearch.Text = address;
-            lstSuggestions.Visible = false;
-            searchTimer.Stop();
-
-            var point = await NominatimGeocode(address);
-            if (point == null) return;
-
-            await SetDropoffMarker(point.Value);
-            gmap.Position = point.Value;
-            gmap.Zoom = 16;
-            LocationSelected?.Invoke(point.Value, address);
-            AddHistory(address);
-        }
-
-        private async Task RunSearch(CancellationToken token)
-        {
-            string query = txtSearch.Text.Trim();
-            if (query.Length < 3) { lstSuggestions.Visible = false; return; }
+            var result = new List<DomainLocation>();
             try
             {
-                var list = await PhotonAutocomplete(query);
-                if (token.IsCancellationRequested) return;
-
-                lstSuggestions.BeginUpdate();
-                lstSuggestions.Items.Clear();
-                if (list?.Count > 0)
-                {
-                    lstSuggestions.Items.AddRange(list.ToArray());
-                    lstSuggestions.Visible = true;
-                    lstSuggestions.BringToFront();
-                }
-                else lstSuggestions.Visible = false;
-                lstSuggestions.EndUpdate();
-            }
-            catch { }
-        }
-
-        private async Task<List<string>> PhotonAutocomplete(string query)
-        {
-            var result = new List<string>();
-            try
-            {
-                string url = $"https://photon.komoot.io/api/?q={Uri.EscapeDataString(query)}&limit=5&lang=vi";
+                string url = $"https://photon.komoot.io/api/?q={Uri.EscapeDataString(query)}" +
+                             $"&limit=10&lang=vi&lat=10.7626&lon=106.6601";
                 var json = JObject.Parse(await _http.GetStringAsync(url));
+
                 foreach (var f in json["features"]!)
                 {
                     var props = f["properties"];
-                    string? name = props?["name"]?.ToString();
-                    string? street = props?["street"]?.ToString();
-                    string? city = props?["city"]?.ToString() ?? props?["state"]?.ToString();
-                    if (string.IsNullOrEmpty(name)) continue;
-                    string full = name;
-                    if (!string.IsNullOrEmpty(street) && street != name) full += $", {street}";
-                    if (!string.IsNullOrEmpty(city)) full += $", {city}";
-                    result.Add(full);
+                    var coords = f["geometry"]?["coordinates"]; // [lon, lat]
+
+                    string name = props?["name"]?.ToString() ?? "Không xác định";
+                    if (string.IsNullOrWhiteSpace(name)) name = "Không xác định";
+
+                    var addrParts = new List<string>();
+                    if (props?["housenumber"] != null) addrParts.Add(props["housenumber"]!.ToString());
+                    if (props?["street"] != null) addrParts.Add(props["street"]!.ToString());
+                    if (props?["district"] != null) addrParts.Add(props["district"]!.ToString());
+                    if (props?["city"] != null) addrParts.Add(props["city"]!.ToString());
+
+                    // Location constructor validates non-empty name/address
+                    string address = addrParts.Count > 0
+                        ? string.Join(", ", addrParts)
+                        : name; // fallback: use name so address is never empty
+
+                    double lat = coords != null ? (double)coords[1]! : 0;
+                    double lng = coords != null ? (double)coords[0]! : 0;
+
+                    result.Add(new DomainLocation(name, address, lat, lng));
                 }
             }
-            catch { }
+            catch { /* Log error if needed */ }
             return result;
+        }
+
+        public async Task<List<DomainLocation>> GetSuggestions(string query)
+        {
+            if (string.IsNullOrWhiteSpace(query) || query.Length < 3)
+                return new List<DomainLocation>();
+
+            return await PhotonAutocomplete(query);
+        }
+
+        /// <summary>
+        /// Đặt marker từ DomainLocation đã có toạ độ (từ Photon) — không cần geocode lại.
+        /// </summary>
+        public async Task<PointLatLng> SelectLocation(DomainLocation location, bool isPickup)
+        {
+            var point = new PointLatLng(location.Lat, location.Lng);
+            if (isPickup) SetPickupMarker(point);
+            else await SetDropoffMarker(point);
+
+            gmap.Position = point;
+            gmap.Zoom = 16;
+            return point;
+        }
+
+        /// <summary>Fallback: geocode từ chuỗi địa chỉ khi không có toạ độ sẵn.</summary>
+        public async Task<PointLatLng?> SelectAddress(string address, bool isPickup)
+        {
+            var point = await NominatimGeocode(address);
+            if (point != null)
+            {
+                if (isPickup) SetPickupMarker(point.Value);
+                else await SetDropoffMarker(point.Value);
+
+                gmap.Position = point.Value;
+                gmap.Zoom = 16;
+            }
+            return point;
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -274,6 +241,8 @@ namespace OOP.Presentation.Map
         // ═════════════════════════════════════════════════════════════════════
         private void MapMouseDown(object? sender, MouseEventArgs e)
         {
+            if (e.Button != MouseButtons.Left) return;
+
             dragging = false;
             mouseDownPos = new Point(e.X, e.Y);
         }
@@ -287,25 +256,57 @@ namespace OOP.Presentation.Map
 
         private void MapMouseUp(object? sender, MouseEventArgs e)
         {
-            wasDragging = dragging;
-            dragging = false;
-        }
+            if (e.Button == MouseButtons.Left)
+            {
+                wasDragging = dragging;
+                dragging = false;
+                if (!wasDragging && AllowLeftClickSelect)
+                    _ = HandleLeftClickAsync(e.X, e.Y);
+                return;
+            }
 
-        private async void MapMouseClick(object? sender, MouseEventArgs e)
+            if (e.Button == MouseButtons.Right)
+            {
+                if (!wasDragging)
+                    _ = HandleRightClickAsync(e.X, e.Y);
+            }
+        }
+        private async Task HandleLeftClickAsync(int x, int y)
         {
-            if (wasDragging) return;
-            if (e.Button != MouseButtons.Right) return;
+            try
+            {
+                PointLatLng point = ClampPoint(gmap.FromLocalToLatLng(x, y));
+                string address = await GetAddressFromPoint(point);
+                bool isPickup = _isPickupSelector?.Invoke() ?? (pickupPoint == default(PointLatLng));
 
-            var point = gmap.FromLocalToLatLng(e.X, e.Y);
-            lstSuggestions.Visible = false;
+                if (isPickup) SetPickupMarker(point);
+                else await SetDropoffMarker(point);
 
-            await SetDropoffMarker(point);
-            string address = await GetAddressFromPoint(point);
-            txtSearch.Text = address;
-            LocationSelected?.Invoke(point, address);
-            AddHistory(address);
+                LocationSelected?.Invoke(point, address, isPickup);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[HandleLeftClickAsync] {ex}");
+            }
         }
+        private async Task HandleRightClickAsync(int x, int y)
+        {
+            try
+            {
+                PointLatLng point = ClampPoint(gmap.FromLocalToLatLng(x, y));
+                string address = await GetAddressFromPoint(point);
+                bool isPickup = _isPickupSelector?.Invoke() ?? (pickupPoint == default(PointLatLng));
 
+                if (isPickup) SetPickupMarker(point);
+                else await SetDropoffMarker(point);
+
+                LocationSelected?.Invoke(point, address, isPickup);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[HandleRightClickAsync] {ex}");
+            }
+        }
         // ═════════════════════════════════════════════════════════════════════
         // Marker helpers
         // ═════════════════════════════════════════════════════════════════════
@@ -319,10 +320,6 @@ namespace OOP.Presentation.Map
             gmap.Refresh();
         }
 
-        /// <summary>
-        /// Đặt marker điểm đến rồi tự động vẽ tuyến pickup → dropoff
-        /// thông qua IRouteService (lộ trình thật).
-        /// </summary>
         public async Task SetDropoffMarker(PointLatLng point)
         {
             dropoffOverlay.Markers.Clear();
@@ -339,84 +336,59 @@ namespace OOP.Presentation.Map
         }
 
         // ═════════════════════════════════════════════════════════════════════
-        // Route drawing — dùng IRouteService
+        // Route drawing
         // ═════════════════════════════════════════════════════════════════════
-
-        /// <summary>
-        /// Vẽ tuyến chuyến đi (pickup → dropoff) lên routeOverlay.
-        /// Dùng IRouteService.GetRoutePointsAsync để lấy lộ trình thật.
-        /// </summary>
         public async Task DrawTripRouteAsync(PointLatLng pickup, PointLatLng dropoff)
         {
             var points = await _routeService.GetRoutePointsAsync(
                 ToLocation(pickup), ToLocation(dropoff));
 
-            if (points.Count < 2)
-            {
-                DrawStraightLine(routeOverlay, pickup, dropoff);
-                return;
-            }
+            if (points.Count < 2) { DrawStraightLine(routeOverlay, pickup, dropoff); return; }
 
-            DrawRouteOnOverlay(
-                routeOverlay,
-                points,
-                new Pen(Color.FromArgb(180, 0, 120, 255), 5),
-                "TripRoute");
+            DrawRouteOnOverlay(routeOverlay, points, Color.FromArgb(180, 0, 120, 255), 5f, "TripRoute");
         }
 
-        /// <summary>
-        /// Vẽ tuyến dẫn đường cho tài xế (vị trí hiện tại → điểm đón)
-        /// lên driverRouteOverlay (màu xanh lá, nét mảnh hơn).
-        /// Gọi lại mỗi khi vị trí tài xế cập nhật khi status = Matched.
-        /// </summary>
         public async Task DrawDriverToPickupRouteAsync(PointLatLng driverPos, PointLatLng pickup)
         {
             var points = await _routeService.GetRoutePointsAsync(
                 ToLocation(driverPos), ToLocation(pickup));
 
-            if (points.Count < 2)
-            {
-                DrawStraightLine(driverRouteOverlay, driverPos, pickup);
-                return;
-            }
+            if (points.Count < 2) { DrawStraightLine(driverRouteOverlay, driverPos, pickup); return; }
 
-            DrawRouteOnOverlay(
-                driverRouteOverlay,
-                points,
-                new Pen(Color.FromArgb(200, 0, 160, 60), 3),
-                "DriverRoute");
+            DrawRouteOnOverlay(driverRouteOverlay, points, Color.FromArgb(200, 0, 160, 60), 3f, "DriverRoute");
         }
 
-        /// <summary>Xoá tuyến dẫn đường của tài xế (sau khi đón hành khách).</summary>
         public void ClearDriverRoute()
         {
             if (InvokeRequired) { BeginInvoke(ClearDriverRoute); return; }
-            driverRouteOverlay.Routes.Clear();
+            ClearOverlayRoutes(driverRouteOverlay);
             gmap.Refresh();
         }
 
         private void DrawRouteOnOverlay(
             GMapOverlay overlay,
             List<DomainLocation> locations,
-            Pen pen,
+            Color color,
+            float width,
             string name)
         {
             if (InvokeRequired)
             {
-                BeginInvoke(() => DrawRouteOnOverlay(overlay, locations, pen, name));
+                BeginInvoke(() => DrawRouteOnOverlay(overlay, locations, color, width, name));
                 return;
             }
 
             var pts = locations.Select(ToPointLatLng).ToList();
-            overlay.Routes.Clear();
-            overlay.Routes.Add(new GMapRoute(pts, name) { Stroke = pen });
+            ClearOverlayRoutes(overlay);
+            overlay.Routes.Add(new GMapRoute(pts, name) { Stroke = new Pen(color, width) });
             gmap.Refresh();
         }
 
         private void DrawStraightLine(GMapOverlay overlay, PointLatLng start, PointLatLng end)
         {
             if (InvokeRequired) { BeginInvoke(() => DrawStraightLine(overlay, start, end)); return; }
-            overlay.Routes.Clear();
+
+            ClearOverlayRoutes(overlay);
             overlay.Routes.Add(new GMapRoute(new List<PointLatLng> { start, end }, "Fallback")
             {
                 Stroke = new Pen(Color.FromArgb(100, Color.Gray), 2)
@@ -425,7 +397,13 @@ namespace OOP.Presentation.Map
             gmap.Refresh();
         }
 
-        /// <summary>Zoom + center để toàn bộ trip route vừa khung nhìn.</summary>
+        private static void ClearOverlayRoutes(GMapOverlay overlay)
+        {
+            foreach (var route in overlay.Routes)
+                route.Stroke?.Dispose();
+            overlay.Routes.Clear();
+        }
+
         public void ZoomToRoute()
         {
             if (InvokeRequired) { BeginInvoke(ZoomToRoute); return; }
@@ -434,23 +412,15 @@ namespace OOP.Presentation.Map
         }
 
         // ═════════════════════════════════════════════════════════════════════
-        // Geofence — dùng IRouteService.IsNearAsync
+        // Geofence
         // ═════════════════════════════════════════════════════════════════════
-
-        /// <summary>
-        /// Trả về true nếu tài xế đang trong bán kính radiusKm so với điểm đón
-        /// theo lộ trình thật (không phải đường chim bay).
-        /// Dùng trong SimulationService trước khi gọi MarkArrived().
-        /// </summary>
         public async Task<bool> IsDriverNearPickup(
             PointLatLng driverPos,
             PointLatLng pickup,
             double radiusKm = 0.05)
         {
             return await _routeService.IsNearAsync(
-                ToLocation(driverPos),
-                ToLocation(pickup),
-                radiusKm);
+                ToLocation(driverPos), ToLocation(pickup), radiusKm);
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -460,6 +430,60 @@ namespace OOP.Presentation.Map
         {
             if (InvokeRequired) { BeginInvoke(() => UpdateDriverLocation(driverId, pos)); return; }
             AnimateDriverMarker(driverId, pos);
+        }
+
+        public void UpdateNearbyDrivers(IEnumerable<Driver> drivers)
+        {
+            if (InvokeRequired) { BeginInvoke(() => UpdateNearbyDrivers(drivers)); return; }
+
+            var idSet = new HashSet<string>(drivers.Select(d => d.Id.ToString()));
+
+            foreach (var key in driverMarkers.Keys.ToList())
+            {
+                if (idSet.Contains(key)) continue;
+
+                if (animationTimers.TryGetValue(key, out var timer))
+                {
+                    timer.Stop();
+                    timer.Dispose();
+                    animationTimers.Remove(key);
+                }
+
+                if (driverMarkers.TryGetValue(key, out var marker))
+                {
+                    driverOverlay.Markers.Remove(marker);
+                    driverMarkers.Remove(key);
+                }
+            }
+
+            foreach (var driver in drivers)
+            {
+                if (driver.Position == null) continue;
+                string key = driver.Id.ToString();
+                string tooltip = $"Tài xế: {driver.Name}\n" +
+                                 $"Xe: {driver.Vehicle.Type}\n" +
+                                 $"⭐ {driver.AverageRating:F1}";
+
+                if (!driverMarkers.ContainsKey(key))
+                {
+                    var marker = new GMarkerGoogle(
+                        new PointLatLng(driver.Position.Lat, driver.Position.Lng),
+                        GMarkerGoogleType.blue_dot)
+                    {
+                        ToolTipText = tooltip,
+                        ToolTipMode = MarkerTooltipMode.OnMouseOver
+                    };
+                    driverMarkers[key] = marker;
+                    driverOverlay.Markers.Add(marker);
+                }
+                else
+                {
+                    driverMarkers[key].ToolTipText = tooltip;
+                }
+
+                UpdateDriverLocation(driver.Id,
+                    new PointLatLng(driver.Position.Lat, driver.Position.Lng));
+            }
         }
 
         private void AnimateDriverMarker(Guid id, PointLatLng endPos)
@@ -486,6 +510,7 @@ namespace OOP.Presentation.Map
 
             int step = 0;
             var timer = new System.Windows.Forms.Timer { Interval = AnimationInterval };
+
             timer.Tick += (_, _) =>
             {
                 step++;
@@ -503,6 +528,7 @@ namespace OOP.Presentation.Map
                     animationTimers.Remove(key);
                 }
             };
+
             animationTimers[key] = timer;
             timer.Start();
         }
@@ -513,15 +539,17 @@ namespace OOP.Presentation.Map
         private async Task LoadPOI(PointLatLng pos)
         {
             if (poiLoading || gmap.Zoom < 14) return;
-            if ((DateTime.Now - lastPoiLoad).TotalSeconds < 5) return;
+            if ((DateTime.UtcNow - lastPoiLoad).TotalSeconds < 5) return;
 
             poiLoading = true;
-            lastPoiLoad = DateTime.Now;
-            poiOverlay.Markers.Clear();
+            lastPoiLoad = DateTime.UtcNow;
+
+            if (InvokeRequired) BeginInvoke(() => poiOverlay.Markers.Clear());
+            else poiOverlay.Markers.Clear();
 
             var rect = gmap.ViewArea;
             string q = $"[out:json];\nnode[\"amenity\"]" +
-                       $"({rect.Bottom},{rect.Left},{rect.Top},{rect.Right});\nout;";
+                          $"({rect.Bottom},{rect.Left},{rect.Top},{rect.Right});\nout;";
             try
             {
                 var res = await _http.PostAsync(
@@ -529,7 +557,10 @@ namespace OOP.Presentation.Map
                     new FormUrlEncodedContent(new Dictionary<string, string> { { "data", q } }));
                 if (!res.IsSuccessStatusCode) return;
 
-                foreach (var el in JObject.Parse(await res.Content.ReadAsStringAsync())["elements"]!)
+                var elements = JObject.Parse(await res.Content.ReadAsStringAsync())["elements"]!;
+                var markers = new List<GMarkerGoogle>();
+
+                foreach (var el in elements)
                 {
                     string amenity = el["tags"]?["amenity"]?.ToString() ?? "";
                     GMarkerGoogleType icon = amenity switch
@@ -540,17 +571,22 @@ namespace OOP.Presentation.Map
                         "atm" => GMarkerGoogleType.green_small,
                         _ => GMarkerGoogleType.orange_dot
                     };
-                    poiOverlay.Markers.Add(new GMarkerGoogle(
+                    markers.Add(new GMarkerGoogle(
                         new PointLatLng((double)el["lat"]!, (double)el["lon"]!), icon)
                     { ToolTipText = el["tags"]?["name"]?.ToString() ?? "POI" });
                 }
+
+                if (InvokeRequired)
+                    BeginInvoke(() => { foreach (var m in markers) poiOverlay.Markers.Add(m); });
+                else
+                    foreach (var m in markers) poiOverlay.Markers.Add(m);
             }
             catch { }
             finally { poiLoading = false; }
         }
 
         // ═════════════════════════════════════════════════════════════════════
-        // Geocoding (Nominatim — chỉ dùng cho địa chỉ; route đi qua RouteService)
+        // Geocoding
         // ═════════════════════════════════════════════════════════════════════
         public async Task<PointLatLng?> NominatimGeocode(string address)
         {
@@ -572,26 +608,32 @@ namespace OOP.Presentation.Map
         {
             string key = $"{point.Lat:F5},{point.Lng:F5}";
             if (reverseCache.TryGetValue(key, out var cached)) return cached;
+
             try
             {
                 string url = $"https://nominatim.openstreetmap.org/reverse" +
-                              $"?lat={point.Lat}&lon={point.Lng}&format=json&addressdetails=1";
+                             $"?lat={point.Lat}&lon={point.Lng}&format=json&addressdetails=1";
                 var json = JObject.Parse(await RateLimitedNominatimGet(url) ?? "{}");
                 string addr = json["display_name"]?.ToString() ?? $"{point.Lat:F4}, {point.Lng:F4}";
+
+                if (reverseCache.Count >= MaxCacheSize)
+                {
+                    var first = reverseCache.Keys.First();
+                    reverseCache.Remove(first);
+                }
                 reverseCache[key] = addr;
                 return addr;
             }
             catch { return $"{point.Lat:F4}, {point.Lng:F4}"; }
         }
 
-        /// <summary>Lấy vị trí hiện tại qua IP, đặt pickup marker.</summary>
         public async Task<string> ZoomToMyLocation()
         {
             try
             {
                 var obj = JObject.Parse(await _http.GetStringAsync("https://ipapi.co/json/"));
                 if (obj["latitude"] == null) return "Vị trí hiện tại";
-                var point = new PointLatLng((double)obj["latitude"]!, (double)obj["longitude"]!);
+                var point = ClampPoint(new PointLatLng((double)obj["latitude"]!, (double)obj["longitude"]!));
                 gmap.Position = point;
                 gmap.Zoom = 15;
                 SetPickupMarker(point);
@@ -615,11 +657,11 @@ namespace OOP.Presentation.Map
         public void ClearRoute()
         {
             var timers = animationTimers.Values.ToArray();
-            animationTimers.Clear();
             foreach (var t in timers) { t.Stop(); t.Dispose(); }
+            animationTimers.Clear();
 
-            routeOverlay.Routes.Clear();
-            driverRouteOverlay.Routes.Clear();
+            ClearOverlayRoutes(routeOverlay);
+            ClearOverlayRoutes(driverRouteOverlay);
             dropoffOverlay.Markers.Clear();
             pickupOverlay.Markers.Clear();
             driverOverlay.Markers.Clear();
@@ -637,35 +679,49 @@ namespace OOP.Presentation.Map
         // Conversion helpers  (PointLatLng ↔ Location)
         // ═════════════════════════════════════════════════════════════════════
 
-        /// <summary>Chuyển GMap.NET PointLatLng → Domain Location (không có label/address).</summary>
-        private static DomainLocation ToLocation(PointLatLng p) =>
-            new(string.Empty, string.Empty, p.Lat, p.Lng);
+        private static DomainLocation ToLocation(PointLatLng p)
+        {
+            var loc = new DomainLocation();
+            loc.Name = "Point";
+            loc.Address = "Point";
+            loc.Lat = p.Lat;
+            loc.Lng = p.Lng;
+            return loc;
+        }
 
-        /// <summary>Chuyển Domain Location → GMap.NET PointLatLng.</summary>
         private static PointLatLng ToPointLatLng(DomainLocation l) =>
             new(l.Lat, l.Lng);
+
+        private static PointLatLng ClampPoint(PointLatLng p)
+        {
+            double lat = Math.Min(HcmMaxLat, Math.Max(HcmMinLat, p.Lat));
+            double lng = Math.Min(HcmMaxLng, Math.Max(HcmMinLng, p.Lng));
+            return new PointLatLng(lat, lng);
+        }
+
+        private void ClampMapToHcm()
+        {
+            var clamped = ClampPoint(gmap.Position);
+            if (Math.Abs(clamped.Lat - gmap.Position.Lat) > 0.0001 ||
+                Math.Abs(clamped.Lng - gmap.Position.Lng) > 0.0001)
+            {
+                gmap.Position = clamped;
+            }
+        }
 
         // ═════════════════════════════════════════════════════════════════════
         // Misc helpers
         // ═════════════════════════════════════════════════════════════════════
-        private void AddHistory(string address)
-        {
-            if (string.IsNullOrWhiteSpace(address)) return;
-            searchHistory.Remove(address);
-            searchHistory.Insert(0, address);
-            if (searchHistory.Count > MaxHistory) searchHistory.RemoveAt(MaxHistory);
-        }
-
         private static void ApplyCustomTooltip(GMapMarker marker, string text)
         {
             marker.ToolTipText = text;
             marker.ToolTipMode = MarkerTooltipMode.OnMouseOver;
             marker.ToolTip = new GMapToolTip(marker)
             {
-                Fill = new SolidBrush(Color.FromArgb(230, 40, 40, 40)),
+                Fill = TooltipFillBrush,
                 Foreground = Brushes.White,
-                Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                Stroke = new Pen(Color.White, 1),
+                Font = TooltipFont,
+                Stroke = TooltipStrokePen,
                 Offset = new Point(10, -25)
             };
         }
@@ -677,12 +733,16 @@ namespace OOP.Presentation.Map
         {
             if (disposing)
             {
-                searchTimer?.Dispose();
-                cts?.Dispose();
-                foreach (var t in animationTimers.Values) { t.Stop(); t.Dispose(); }
+                var timers = animationTimers.Values.ToArray();
+                foreach (var t in timers) { t.Stop(); t.Dispose(); }
                 animationTimers.Clear();
+
+                ClearOverlayRoutes(routeOverlay);
+                ClearOverlayRoutes(driverRouteOverlay);
             }
             base.Dispose(disposing);
         }
     }
 }
+
+

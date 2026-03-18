@@ -1,4 +1,4 @@
-﻿namespace OOP.Infrastructure.Storage
+﻿﻿namespace OOP.Infrastructure.Storage
 {
     public interface IStorage
     {

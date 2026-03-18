@@ -16,9 +16,6 @@
     <Compile Update="Presentation\CoreForms\MainForm.cs">
       <SubType>Form</SubType>
     </Compile>
-    <Compile Update="Presentation\TripForms\FareFuleForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
     <Compile Update="Presentation\TripForms\DriverTripForm.cs">
       <SubType>Form</SubType>
     </Compile>

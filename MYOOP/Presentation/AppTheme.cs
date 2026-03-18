@@ -1,4 +1,4 @@
-﻿namespace OOP.Presentation
+﻿﻿namespace OOP.Presentation
 {
     /// <summary>
     /// Tập trung toàn bộ màu sắc và hằng số UI — thay thế các hardcode rải rác trong từng Form.
@@ -6,34 +6,43 @@
     public static class AppTheme
     {
         // --- Brand colors ---
-        public static readonly Color Primary = Color.FromArgb(0, 122, 255);
-        public static readonly Color PrimaryHover = Color.FromArgb(0, 100, 220);
+        public static readonly Color Primary = Color.FromArgb(18, 113, 255);
+        public static readonly Color PrimaryHover = Color.FromArgb(12, 92, 210);
 
-        public static readonly Color Success = Color.FromArgb(25, 135, 84);
-        public static readonly Color SuccessHover = Color.FromArgb(20, 110, 68);
+        public static readonly Color Success = Color.FromArgb(16, 140, 92);
+        public static readonly Color SuccessHover = Color.FromArgb(12, 115, 76);
 
-        public static readonly Color Warning = Color.FromArgb(253, 126, 20);
-        public static readonly Color WarningHover = Color.FromArgb(210, 100, 10);
+        public static readonly Color Warning = Color.FromArgb(232, 124, 26);
+        public static readonly Color WarningHover = Color.FromArgb(200, 98, 18);
 
-        public static readonly Color Danger = Color.FromArgb(220, 53, 69);
-        public static readonly Color DangerHover = Color.FromArgb(185, 30, 46);
+        public static readonly Color Danger = Color.FromArgb(210, 64, 70);
+        public static readonly Color DangerHover = Color.FromArgb(175, 42, 48);
 
-        public static readonly Color Purple = Color.FromArgb(111, 66, 193);
-        public static readonly Color PurpleHover = Color.FromArgb(88, 44, 160);
+        public static readonly Color Accent = Color.FromArgb(46, 196, 182);
+        public static readonly Color AccentHover = Color.FromArgb(34, 166, 154);
 
         // --- Neutrals ---
-        public static readonly Color DarkBg = Color.FromArgb(24, 27, 31);
-        public static readonly Color PageBg = Color.FromArgb(245, 247, 250);
+        public static readonly Color DarkBg = Color.FromArgb(19, 22, 26);
+        public static readonly Color PageBg = Color.FromArgb(243, 245, 249);
+        public static readonly Color PageBgAlt = Color.FromArgb(236, 239, 245);
         public static readonly Color CardBg = Color.White;
-        public static readonly Color BorderLight = Color.FromArgb(220, 220, 220);
-        public static readonly Color TextMuted = Color.FromArgb(130, 130, 130);
-        public static readonly Color TextSubtle = Color.FromArgb(180, 180, 180);
-        public static readonly Color Disabled = Color.FromArgb(200, 200, 200);
+        public static readonly Color CardAlt = Color.FromArgb(251, 252, 253);
+        public static readonly Color BorderLight = Color.FromArgb(220, 224, 230);
+        public static readonly Color BorderStrong = Color.FromArgb(190, 196, 204);
+        public static readonly Color TextPrimary = Color.FromArgb(28, 32, 38);
+        public static readonly Color TextMuted = Color.FromArgb(110, 118, 129);
+        public static readonly Color TextSubtle = Color.FromArgb(150, 156, 165);
+        public static readonly Color Disabled = Color.FromArgb(205, 210, 218);
+        public static readonly Color Highlight = Color.FromArgb(230, 243, 255);
 
         // --- Sizing ---
-        public const int InputHeight = 36;
-        public const int ButtonHeight = 44;
+        public const int InputHeight = 38;
+        public const int ButtonHeight = 46;
         public const int SmallButton = 36;
-        public const int CardRadius = 14;
+        public const int CardRadius = 16;
+        public const int CardPadding = 24;
+        public const int SectionGap = 16;
     }
 }
+
+

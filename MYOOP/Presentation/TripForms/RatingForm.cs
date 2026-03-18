@@ -1,4 +1,4 @@
-﻿using OOP.Application.Services.Interfaces;
+﻿﻿using OOP.Application.Services.Interfaces;
 using OOP.Application.Validators;
 using OOP.Domain.Entities;
 
@@ -50,7 +50,7 @@ namespace OOP
             ComboBoxTrip.Format += (s, e) =>
             {
                 if (e.ListItem is Trip t)
-                    e.Value = $"{t.Id.ToString()[..8]}  {t.PickupLocation?.Label} → {t.DestinationLocation?.Label}  ({t.RequestedAt:dd/MM HH:mm})";
+                    e.Value = $"{t.Id.ToString()[..8]}  {t.PickupLocation?.Name} → {t.DestinationLocation?.Name}  ({t.RequestedAt:dd/MM HH:mm})";
             };
             ComboBoxTrip.FormattingEnabled = true;
 

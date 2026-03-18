@@ -1,31 +1,24 @@
-﻿using GMap.NET;
-using GMap.NET.MapProviders;
-using System.Runtime.Serialization;
+﻿﻿using System.Runtime.Serialization;
 
 namespace OOP.Domain.Entities
 {
     [DataContract]
     public class Location
     {
-        // Tên địa điểm gợi nhớ (vd: "Nhà riêng", "Công ty", "Landmark 81")
-        [DataMember]
-        public string Label { get; init; }
+        [DataMember] public string Name { get; set; } = string.Empty;
+        [DataMember] public string Address { get; set; } = string.Empty;
+        [DataMember] public double Lat { get; set; }
+        [DataMember] public double Lng { get; set; }
 
-        // Địa chỉ chi tiết: "268 Lý Thường Kiệt, Quận 10, TP.HCM"
-        [DataMember]
-        public string Address { get; init; }
-        [DataMember]
-        public double Lat { get; init; }
-        [DataMember]
-        public double Lng { get; init; }
-        protected Location() { }
-        public Location(string label, string address, double lat, double lng)
+        public Location() { }
+
+        public Location(string name, string address, double lat, double lng)
         {
-            if (string.IsNullOrWhiteSpace(label))
-                throw new ArgumentException("Nhãn địa điểm không được để trống.");
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("Nhãn địa điểm không được để trống.", nameof(name));
 
             if (string.IsNullOrWhiteSpace(address))
-                throw new ArgumentException("Địa chỉ không được để trống.");
+                throw new ArgumentException("Địa chỉ không được để trống.", nameof(address));
 
             if (lat < -90 || lat > 90)
                 throw new ArgumentOutOfRangeException(nameof(lat), "Vĩ độ phải từ -90 đến 90.");
@@ -33,11 +26,11 @@ namespace OOP.Domain.Entities
             if (lng < -180 || lng > 180)
                 throw new ArgumentOutOfRangeException(nameof(lng), "Kinh độ phải từ -180 đến 180.");
 
-            Label = label;
+            Name = name;
             Address = address;
             Lat = lat;
             Lng = lng;
         }
-        public override string ToString() => $"{Label}: {Address} [{Lat}, {Lng}]";
+        public override string ToString() => $"{Name}: {Address} [{Lat}, {Lng}]";
     }
 }
