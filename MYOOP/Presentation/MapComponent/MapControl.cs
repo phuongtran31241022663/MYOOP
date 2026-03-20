@@ -1,11 +1,11 @@
-﻿﻿﻿using GMap.NET;
+﻿﻿using GMap.NET;
 using GMap.NET.MapProviders;
 using GMap.NET.WindowsForms;
 using GMap.NET.WindowsForms.Markers;
 using Newtonsoft.Json.Linq;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
-using DomainLocation = OOP.Domain.Entities.Location;
+using DomainLocation = OOP.Domain.Entities.GeoLocation;
 
 namespace OOP.Presentation.Map
 {
@@ -166,36 +166,84 @@ namespace OOP.Presentation.Map
             var result = new List<DomainLocation>();
             try
             {
+                // Use photon.komoot.io for address search (OSM-based)
                 string url = $"https://photon.komoot.io/api/?q={Uri.EscapeDataString(query)}" +
-                             $"&limit=10&lang=vi&lat=10.7626&lon=106.6601";
-                var json = JObject.Parse(await _http.GetStringAsync(url));
+                             $"&limit=10&lang=vi";
 
-                foreach (var f in json["features"]!)
+                var response = await _http.GetAsync(url);
+                if (!response.IsSuccessStatusCode)
                 {
-                    var props = f["properties"];
-                    var coords = f["geometry"]?["coordinates"]; // [lon, lat]
+                    // Fallback: try with different endpoint format
+                    url = $"https://nominatim.openstreetmap.org/search?q={Uri.EscapeDataString(query)}&format=json&limit=10&addressdetails=1&accept-language=vi";
+                    response = await _http.GetAsync(url);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[PhotonAutocomplete] Both Photon and Nominatim failed: {response.StatusCode}");
+                        return result;
+                    }
+                    var jsonContent = await response.Content.ReadAsStringAsync();
+                    if (string.IsNullOrWhiteSpace(jsonContent) || jsonContent.Trim().StartsWith("<!DOCTYPE") || jsonContent.Trim().StartsWith("<html"))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[PhotonAutocomplete] Nominatim returned HTML, skipping");
+                        return result;
+                    }
+                    var json = JArray.Parse(jsonContent);
+                    foreach (var item in json)
+                    {
+                        if (item.Type != JTokenType.Object) continue;
+                        var props = item["address"];
+                        string name = item["display_name"]?.ToString() ?? "Unknown";
+                        string address = props?["road"]?.ToString() ?? props?["city"]?.ToString() ?? name;
+                        
+                        double lat = 0, lng = 0;
+                        double.TryParse(item["lat"]?.ToString(), out lat);
+                        double.TryParse(item["lon"]?.ToString(), out lng);
 
-                    string name = props?["name"]?.ToString() ?? "Không xác định";
-                    if (string.IsNullOrWhiteSpace(name)) name = "Không xác định";
+                        if (lat != 0 && lng != 0)
+                            result.Add(new DomainLocation(name.Length > 50 ? name.Substring(0, 50) : name, address ?? name, lat, lng));
+                    }
+                    return result;
+                }
 
-                    var addrParts = new List<string>();
-                    if (props?["housenumber"] != null) addrParts.Add(props["housenumber"]!.ToString());
-                    if (props?["street"] != null) addrParts.Add(props["street"]!.ToString());
-                    if (props?["district"] != null) addrParts.Add(props["district"]!.ToString());
-                    if (props?["city"] != null) addrParts.Add(props["city"]!.ToString());
+                var content = await response.Content.ReadAsStringAsync();
+                if (string.IsNullOrWhiteSpace(content) || content.Trim().StartsWith("<!DOCTYPE") || content.Trim().StartsWith("<html"))
+                {
+                    System.Diagnostics.Debug.WriteLine($"[PhotonAutocomplete] Photon returned HTML, trying Nominatim");
+                    // Fall through to Nominatim fallback below
+                }
+                else
+                {
+                    var jsonObj = JObject.Parse(content);
+                    foreach (var f in jsonObj["features"]!)
+                    {
+                        var props = f["properties"];
+                        var coords = f["geometry"]?["coordinates"]; // [lon, lat]
 
-                    // Location constructor validates non-empty name/address
-                    string address = addrParts.Count > 0
-                        ? string.Join(", ", addrParts)
-                        : name; // fallback: use name so address is never empty
+                        string name = props?["name"]?.ToString() ?? "Không xác định";
+                        if (string.IsNullOrWhiteSpace(name)) name = "Không xác định";
 
-                    double lat = coords != null ? (double)coords[1]! : 0;
-                    double lng = coords != null ? (double)coords[0]! : 0;
+                        var addrParts = new List<string>();
+                        if (props?["housenumber"] != null) addrParts.Add(props["housenumber"]!.ToString()!);
+                        if (props?["street"] != null) addrParts.Add(props["street"]!.ToString()!);
+                        if (props?["district"] != null) addrParts.Add(props["district"]!.ToString()!);
+                        if (props?["city"] != null) addrParts.Add(props["city"]!.ToString()!);
 
-                    result.Add(new DomainLocation(name, address, lat, lng));
+                        string address = addrParts.Count > 0
+                            ? string.Join(", ", addrParts)
+                            : name;
+
+                        double lat = coords != null ? (double)coords[1]! : 0;
+                        double lng = coords != null ? (double)coords[0]! : 0;
+
+                        if (lat != 0 && lng != 0)
+                            result.Add(new DomainLocation(name, address, lat, lng));
+                    }
                 }
             }
-            catch { /* Log error if needed */ }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PhotonAutocomplete] Error: {ex.Message}");
+            }
             return result;
         }
 
@@ -345,7 +393,7 @@ namespace OOP.Presentation.Map
 
             if (points.Count < 2) { DrawStraightLine(routeOverlay, pickup, dropoff); return; }
 
-            DrawRouteOnOverlay(routeOverlay, points, Color.FromArgb(180, 0, 120, 255), 5f, "TripRoute");
+            DrawRouteOnOverlay(routeOverlay, points.ToList(), Color.FromArgb(180, 0, 120, 255), 5f, "TripRoute");
         }
 
         public async Task DrawDriverToPickupRouteAsync(PointLatLng driverPos, PointLatLng pickup)
@@ -355,7 +403,7 @@ namespace OOP.Presentation.Map
 
             if (points.Count < 2) { DrawStraightLine(driverRouteOverlay, driverPos, pickup); return; }
 
-            DrawRouteOnOverlay(driverRouteOverlay, points, Color.FromArgb(200, 0, 160, 60), 3f, "DriverRoute");
+            DrawRouteOnOverlay(driverRouteOverlay, points.ToList(), Color.FromArgb(200, 0, 160, 60), 3f, "DriverRoute");
         }
 
         public void ClearDriverRoute()
@@ -557,7 +605,13 @@ namespace OOP.Presentation.Map
                     new FormUrlEncodedContent(new Dictionary<string, string> { { "data", q } }));
                 if (!res.IsSuccessStatusCode) return;
 
-                var elements = JObject.Parse(await res.Content.ReadAsStringAsync())["elements"]!;
+                var poiContent = await res.Content.ReadAsStringAsync();
+                if (string.IsNullOrWhiteSpace(poiContent) || poiContent.Trim().StartsWith("<!DOCTYPE") || poiContent.Trim().StartsWith("<html"))
+                {
+                    System.Diagnostics.Debug.WriteLine($"[LoadPOI] Overpass returned HTML");
+                    return;
+                }
+                var elements = JObject.Parse(poiContent)["elements"]!;
                 var markers = new List<GMarkerGoogle>();
 
                 foreach (var el in elements)
@@ -581,7 +635,10 @@ namespace OOP.Presentation.Map
                 else
                     foreach (var m in markers) poiOverlay.Markers.Add(m);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[LoadNearbyPOIs] Error: {ex.Message}");
+            }
             finally { poiLoading = false; }
         }
 
@@ -595,13 +652,23 @@ namespace OOP.Presentation.Map
             {
                 string url = $"https://nominatim.openstreetmap.org/search" +
                              $"?q={Uri.EscapeDataString(address)}&format=json&limit=1";
-                var arr = JArray.Parse(await RateLimitedNominatimGet(url) ?? "[]");
+                var geoContent = await RateLimitedNominatimGet(url) ?? "[]";
+                if (string.IsNullOrWhiteSpace(geoContent) || geoContent.Trim().StartsWith("<!DOCTYPE") || geoContent.Trim().StartsWith("<html"))
+                {
+                    System.Diagnostics.Debug.WriteLine($"[NominatimGeocode] API returned HTML");
+                    return null;
+                }
+                var arr = JArray.Parse(geoContent);
                 if (arr.Count == 0) return null;
                 return new PointLatLng(
                     double.Parse(arr[0]["lat"]!.ToString(), System.Globalization.CultureInfo.InvariantCulture),
                     double.Parse(arr[0]["lon"]!.ToString(), System.Globalization.CultureInfo.InvariantCulture));
             }
-            catch { return null; }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[NominatimGeocode] Error: {ex.Message}");
+                return null;
+            }
         }
 
         public async Task<string> GetAddressFromPoint(PointLatLng point)
@@ -613,7 +680,13 @@ namespace OOP.Presentation.Map
             {
                 string url = $"https://nominatim.openstreetmap.org/reverse" +
                              $"?lat={point.Lat}&lon={point.Lng}&format=json&addressdetails=1";
-                var json = JObject.Parse(await RateLimitedNominatimGet(url) ?? "{}");
+                var revContent = await RateLimitedNominatimGet(url) ?? "{}";
+                if (string.IsNullOrWhiteSpace(revContent) || revContent.Trim().StartsWith("<!DOCTYPE") || revContent.Trim().StartsWith("<html"))
+                {
+                    System.Diagnostics.Debug.WriteLine($"[GetAddressFromPoint] API returned HTML");
+                    return $"{point.Lat:F4}, {point.Lng:F4}";
+                }
+                var json = JObject.Parse(revContent);
                 string addr = json["display_name"]?.ToString() ?? $"{point.Lat:F4}, {point.Lng:F4}";
 
                 if (reverseCache.Count >= MaxCacheSize)
@@ -624,22 +697,52 @@ namespace OOP.Presentation.Map
                 reverseCache[key] = addr;
                 return addr;
             }
-            catch { return $"{point.Lat:F4}, {point.Lng:F4}"; }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[GetAddressFromPoint] Error: {ex.Message}");
+                return $"{point.Lat:F4}, {point.Lng:F4}";
+            }
         }
 
         public async Task<string> ZoomToMyLocation()
         {
             try
             {
-                var obj = JObject.Parse(await _http.GetStringAsync("https://ipapi.co/json/"));
-                if (obj["latitude"] == null) return "Vị trí hiện tại";
-                var point = ClampPoint(new PointLatLng((double)obj["latitude"]!, (double)obj["longitude"]!));
-                gmap.Position = point;
-                gmap.Zoom = 15;
-                SetPickupMarker(point);
-                return await GetAddressFromPoint(point);
+                // Try ipapi.co first
+                var response = await _http.GetAsync("https://ipapi.co/json/");
+                if (response.IsSuccessStatusCode)
+                {
+                    var obj = JObject.Parse(await response.Content.ReadAsStringAsync());
+                    if (obj["latitude"] != null)
+                    {
+                        var point = ClampPoint(new PointLatLng((double)obj["latitude"]!, (double)obj["longitude"]!));
+                        gmap.Position = point;
+                        gmap.Zoom = 15;
+                        SetPickupMarker(point);
+                        return await GetAddressFromPoint(point);
+                    }
+                }
             }
-            catch { return "Vị trí hiện tại"; }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ZoomToMyLocation] ipapi.co failed: {ex.Message}");
+            }
+
+            // Fallback: Use default Ho Chi Minh City location
+            try
+            {
+                // Try to get location from browser Geolocation API via JavaScript
+                // For now, use default HCMC location
+                var defaultPoint = new PointLatLng(10.7769, 106.7009); // District 1, HCMC
+                gmap.Position = defaultPoint;
+                gmap.Zoom = 15;
+                SetPickupMarker(defaultPoint);
+                return "TP. Hồ Chí Minh (Mặc định)";
+            }
+            catch
+            {
+                return "Vị trí hiện tại";
+            }
         }
 
         private async Task<string?> RateLimitedNominatimGet(string url)
@@ -681,12 +784,7 @@ namespace OOP.Presentation.Map
 
         private static DomainLocation ToLocation(PointLatLng p)
         {
-            var loc = new DomainLocation();
-            loc.Name = "Point";
-            loc.Address = "Point";
-            loc.Lat = p.Lat;
-            loc.Lng = p.Lng;
-            return loc;
+            return new DomainLocation("Point", "Point", p.Lat, p.Lng);
         }
 
         private static PointLatLng ToPointLatLng(DomainLocation l) =>

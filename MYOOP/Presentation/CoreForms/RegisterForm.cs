@@ -1,19 +1,16 @@
-﻿using OOP.Application.Services.Interfaces;
-using OOP.Application.Validators;
-using OOP.Domain.Entities;
+﻿using OOP.Domain.Entities;
 using OOP.Domain.Enums;
+using OOP.Presentation.BaseForms;
 
 namespace OOP.Presentation
 {
-    public class RegisterForm : Form
+    public class RegisterForm : BaseDialogForm
     {
-        // --- Dependencies ---
-        private readonly IAuthService _authService;
-
+        private readonly IUserService _userService;
         /// <summary>
         /// Phát ra khi đăng ký thành công để caller (ví dụ MainForm) có thể auto-login.
         /// </summary>
-        public event Action<string, string, UserRole>? RegisteredSuccessfully;
+        public event Action<string, string, bool>? RegisteredSuccessfully; // bool: true = driver, false = passenger
 
         // --- Controls: common ---
         private RadioButton _rdoPassenger = null!;
@@ -43,13 +40,13 @@ namespace OOP.Presentation
         // --- Constants ---
         private const int CardWidth = 360;
         private const int CardPad = 24;
-        private const int InputHeight = 38;
+        private new const int InputHeight = 38;
         private const int LabelHeight = 20;
         private const int Gap = 10;
 
-        public RegisterForm(IAuthService authService)
+        public RegisterForm(IUserService userService)
         {
-            _authService = authService ?? throw new ArgumentNullException(nameof(authService));
+            _userService = userService ?? throw new ArgumentNullException(nameof(userService));
             InitForm();
             BuildUI();
 
@@ -327,8 +324,6 @@ namespace OOP.Presentation
             _lblError.Text = "";
             _errorProvider.Clear();
 
-            if (!Validate_Fields()) return;
-
             SetLoading(true);
             try
             {
@@ -338,12 +333,12 @@ namespace OOP.Presentation
 
                 if (_rdoPassenger.Checked)
                 {
-                    await _authService.RegisterPassenger(name, phone, password);
+                    await _userService.RegisterPassenger(name, phone, password);
                     ShowSuccess(
                         "Đăng ký hành khách thành công! Đang đăng nhập...",
                         phone,
                         password,
-                        UserRole.Passenger);
+                        false); // not a driver
                 }
                 else
                 {
@@ -362,13 +357,13 @@ namespace OOP.Presentation
                         _ => throw new InvalidOperationException("Loại xe không hỗ trợ")
                     };
 
-                    var defaultLocation = new OOP.Domain.Entities.Location(
+                    var defaultLocation = new OOP.Domain.Entities.GeoLocation(
                         name: "Vị trí hiện tại",
                         address: "TP. Hồ Chí Minh",
                         lat: 10.7769,
                         lng: 106.7009);
 
-                    await _authService.RegisterDriver(
+                    await _userService.RegisterDriver(
                         name,
                         phone,
                         password,
@@ -379,7 +374,7 @@ namespace OOP.Presentation
                         "Đăng ký tài xế thành công! Đang đăng nhập...",
                         phone,
                         password,
-                        UserRole.Driver);
+                        true); // is driver
                 }
             }
             catch (Exception ex)
@@ -400,56 +395,6 @@ namespace OOP.Presentation
         private void OnBackClicked(object? sender, EventArgs e)
         {
             Close();
-        }
-
-        // ── Validation ─────────────────────────────────────────────────────
-
-        private bool Validate_Fields()
-        {
-            bool ok = true;
-
-            if (_txtName.Text.Trim().Length < 2)
-            {
-                _errorProvider.SetError(_txtName, "Tên phải có ít nhất 2 ký tự");
-                ok = false;
-            }
-
-            try { UserValidator.ValidatePhone(_txtPhone.Text.Trim()); }
-            catch (ArgumentException ex)
-            {
-                _errorProvider.SetError(_txtPhone, ex.Message);
-                ok = false;
-            }
-
-            try { UserValidator.ValidatePassword(_txtPassword.Text); }
-            catch (ArgumentException ex)
-            {
-                _errorProvider.SetError(_txtPassword, ex.Message);
-                ok = false;
-            }
-
-            if (_rdoDriver.Checked)
-            {
-                if (string.IsNullOrWhiteSpace(_txtPlate.Text))
-                { _errorProvider.SetError(_txtPlate, "Vui lòng nhập biển số xe"); ok = false; }
-
-                if (string.IsNullOrWhiteSpace(_txtBrand.Text))
-                { _errorProvider.SetError(_txtBrand, "Vui lòng nhập hãng xe"); ok = false; }
-
-                if (string.IsNullOrWhiteSpace(_txtModel.Text))
-                { _errorProvider.SetError(_txtModel, "Vui lòng nhập dòng xe"); ok = false; }
-
-                if (string.IsNullOrWhiteSpace(_txtColor.Text))
-                { _errorProvider.SetError(_txtColor, "Vui lòng nhập màu xe"); ok = false; }
-
-                if (string.IsNullOrWhiteSpace(_txtLicense.Text))
-                {
-                    _errorProvider.SetError(_txtLicense, "Vui lòng nhập số bằng lái xe");
-                    ok = false;
-                }
-            }
-
-            return ok;
         }
 
         // ── Helpers ────────────────────────────────────────────────────────
@@ -505,12 +450,12 @@ namespace OOP.Presentation
             }
         }
 
-        private void ShowSuccess(string message, string phone, string password, UserRole role)
+        private void ShowSuccess(string message, string phone, string password, bool isDriver)
         {
             MessageBox.Show(message, "Thành công",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
 
-            RegisteredSuccessfully?.Invoke(phone, password, role);
+            RegisteredSuccessfully?.Invoke(phone, password, isDriver);
 
             ResetForm();
             Close();

@@ -8,12 +8,11 @@ namespace OOP.Application.Services
     public class PaymentService : IPaymentService
     {
         private readonly IPaymentRepository _paymentRepo;
-        private readonly IFareRuleRepository _fareRuleRepo;
+        private readonly IFareRepository _fareRuleRepo;
 
-        // Việc TopUp ví tài xế là trách nhiệm của TripService (đã có sẵn).
         public PaymentService(
             IPaymentRepository paymentRepo,
-            IFareRuleRepository fareRuleRepo)
+            IFareRepository fareRuleRepo)
         {
             _paymentRepo = paymentRepo ?? throw new ArgumentNullException(nameof(paymentRepo));
             _fareRuleRepo = fareRuleRepo ?? throw new ArgumentNullException(nameof(fareRuleRepo));
@@ -43,8 +42,6 @@ namespace OOP.Application.Services
         public async Task ProcessPayment(Guid paymentId)
         {
             var payment = await GetOrThrow(paymentId);
-
-            // TopUp ví tài xế được xử lý trong TripService.CompleteTrip() sau khi gọi hàm này.
             payment.MarkPaid();
             await _paymentRepo.Update(payment);
         }

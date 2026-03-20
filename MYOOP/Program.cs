@@ -1,16 +1,15 @@
 using OOP.Application.Services;
-﻿﻿﻿using OOP.Application.Services;
-using OOP.Infrastructure.Map;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
+using OOP.Infrastructure.Map;
 using OOP.Infrastructure.Repositories;
 using OOP.Infrastructure.Storage;
 using OOP.Presentation;
-using OOP.Presentation.TripForms;
 using OOP.Presentation.Map;
-using DomainLocation = OOP.Domain.Entities.Location;
+using OOP.Presentation.TripForms;
+using DomainLocation = OOP.Domain.Entities.GeoLocation;
 
 namespace OOP
 {
@@ -45,9 +44,9 @@ namespace OOP
             var storage = new JsonStorage(dataPath);
 
             // ── Repositories ──────────────────────────────────────────────────
-            IUserRepository userRepo = new UserRepository(storage);
-            ITripRepository tripRepo = new TripRepository(storage);
-            IFareRuleRepository fareRepo = new FareRuleRepository(storage);
+            IUserRepository userRepo = new ThreadSafeUserRepository(new UserRepository(storage));
+            ITripRepository tripRepo = new ThreadSafeTripRepository(new TripRepository(storage));
+            IFareRepository fareRepo = new FareRuleRepository(storage);
             IRatingRepository ratingRepo = new RatingRepository(storage);
             IPaymentRepository paymentRepo = new PaymentRepository(storage);
 
@@ -57,7 +56,6 @@ namespace OOP
 
             // ── Application services ──────────────────────────────────────────
             var userService = new UserService(userRepo);
-            var authService = new AuthService(userRepo);
             var paymentService = new PaymentService(paymentRepo, fareRepo);
             var fareRuleService = new FareService(fareRepo);
             var notificationService = new NotificationService(userRepo, tripRepo);
@@ -69,7 +67,7 @@ namespace OOP
                 async (tripId, message) =>
                     await tripNotificationSubscriber.Handle(tripId, message);
 
-            var matchingService = new DriverMatchingService(userRepo, routeService);
+            var matchingService = new DriverMatchingService(userRepo, tripRepo, routeService);
             var adminService = new AdminService(userRepo, tripRepo, fareRepo, paymentRepo);
             var ratingService = new RatingService(ratingRepo, userRepo, tripRepo);
             ITripService tripService = new TripService(
@@ -88,7 +86,7 @@ namespace OOP
             httpClient.DefaultRequestHeaders.Add("User-Agent", "RideGo-App/1.0");
 
             // ── Seed data (sync before UI starts) ─────────────────────────────
-            SeedData(authService, tripRepo, userRepo, fareRepo).GetAwaiter().GetResult();
+            SeedData(tripRepo, userRepo, fareRepo, userService).GetAwaiter().GetResult();
 
             // ── UI factories ──────────────────────────────────────────────────
             Func<Passenger, ITripService, Form> requestTripFactory = (p, s) =>
@@ -120,12 +118,12 @@ namespace OOP
                 new AdminDashboardForm(a, adminService);
 
             Func<LoginForm> loginFormFactory = () => new LoginForm(
-                authService,
+                userService,
                 passengerDashboardFactory,
                 driverDashboardFactory,
                 adminDashboardFactory);
 
-            Func<RegisterForm> registerFormFactory = () => new RegisterForm(authService);
+            Func<RegisterForm> registerFormFactory = () => new RegisterForm(userService);
 
             var simulationTimer = new System.Windows.Forms.Timer { Interval = 2000 };
             simulationTimer.Tick += async (_, _) =>
@@ -135,7 +133,10 @@ namespace OOP
                     if (!SimulationConfig.Enabled) return;
                     await simulationService.UpdateDriverLocations();
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Simulation] UpdateDriverLocations error: {ex.Message}");
+                }
             };
             simulationTimer.Start();
 
@@ -146,7 +147,10 @@ namespace OOP
                 {
                     await tripService.ExpireSearchingTrips(TripTimeoutConfig.SearchTimeout);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Timeout] ExpireSearchingTrips error: {ex.Message}");
+                }
             };
             timeoutTimer.Start();
 
@@ -154,7 +158,7 @@ namespace OOP
                 new MainForm(
                     loginFormFactory,
                     registerFormFactory,
-                    authService,
+                    userService,
                     passengerDashboardFactory,
                     driverDashboardFactory));
         }
@@ -162,6 +166,21 @@ namespace OOP
         internal static class SimulationConfig
         {
             public static bool Enabled { get; set; } = true;
+
+            // Demo map bounds for Ho Chi Minh City area
+            public static double MinLat { get; set; } = 10.7200;
+            public static double MaxLat { get; set; } = 10.8500;
+            public static double MinLng { get; set; } = 106.6000;
+            public static double MaxLng { get; set; } = 106.7800;
+
+            private static readonly Random Random = new();
+
+            public static DomainLocation GenerateRandomLocation(string name, string address)
+            {
+                var lat = MinLat + (MaxLat - MinLat) * Random.NextDouble();
+                var lng = MinLng + (MaxLng - MinLng) * Random.NextDouble();
+                return new DomainLocation(name, address, lat, lng);
+            }
         }
 
         internal static class TripTimeoutConfig
@@ -171,10 +190,10 @@ namespace OOP
         }
 
         private static async Task SeedData(
-            AuthService authService,
             ITripRepository tripRepo,
             IUserRepository userRepo,
-            IFareRuleRepository fareRepo)
+            IFareRepository fareRepo,
+            UserService userService)
         {
             // ── Admin ─────────────────────────────────────────────────────────
             const string adminPhone = "0000000000";
@@ -182,7 +201,7 @@ namespace OOP
             {
                 var admin = new Admin(
                     Guid.NewGuid(), "Hệ Thống Admin", adminPhone,
-                    AuthService.HashPassword("admin123"), true);
+                    "admin123"); // Admin luôn active
                 await userRepo.Add(admin);
             }
 
@@ -194,27 +213,30 @@ namespace OOP
             var tanBinh = new DomainLocation("Tân Bình", "Sân bay Tân Sơn Nhất", 10.8132, 106.6620);
             var phuNhuan = new DomainLocation("Phú Nhuận", "Ngã 4 Phú Nhuận", 10.7995, 106.6792);
 
-            var p1 = await EnsurePassenger(authService, userRepo, "Nguyễn Văn A", "0900000001");
-            var p2 = await EnsurePassenger(authService, userRepo, "Trần Thị B", "0900000002");
-            var p3 = await EnsurePassenger(authService, userRepo, "Phạm Minh C", "0900000004");
+            var p1 = await EnsurePassenger(userService, userRepo, "Nguyễn Văn A", "0900000001");
+            var p2 = await EnsurePassenger(userService, userRepo, "Trần Thị B", "0900000002");
+            var p3 = await EnsurePassenger(userService, userRepo, "Phạm Minh C", "0900000004");
 
+            // Create drivers with random positions in demo area
             var d1 = await EnsureDriver(
-                authService, userRepo,
-                "Lê Tài Xế", "0900000003", hcm,
+                userService, userRepo,
+                "Lê Tài Xế", "0900000003", SimulationConfig.GenerateRandomLocation("Vị trí", "TP.HCM"),
                 new Motorbike(Guid.NewGuid(), "59X1-12345", "Honda", "Vision", "Đỏ"),
                 "A1-12345");
 
             var d2 = await EnsureDriver(
-                authService, userRepo,
-                "Ngô Tài Xế", "0900000005", q7,
+                userService, userRepo,
+                "Ngô Tài Xế", "0900000005", SimulationConfig.GenerateRandomLocation("Vị trí", "TP.HCM"),
                 new Car(Guid.NewGuid(), "51H-78901", "Toyota", "Vios", "Trắng", 4),
                 "B2-54321");
 
             var d3 = await EnsureDriver(
-                authService, userRepo,
-                "Hoàng Tài Xế", "0900000006", tanBinh,
+                userService, userRepo,
+                "Hoàng Tài Xế", "0900000006", SimulationConfig.GenerateRandomLocation("Vị trí", "TP.HCM"),
                 new Motorbike(Guid.NewGuid(), "59Y2-67890", "Yamaha", "Sirius", "Đen"),
                 "A1-67890");
+
+
 
             var existingTrips = await tripRepo.GetAll();
             if (existingTrips.Count > 0) return;
@@ -224,21 +246,28 @@ namespace OOP
             var carRule = await fareRepo.GetByVehicleType(VehicleType.Car)
                 ?? throw new InvalidOperationException("Không tìm thấy cấu hình giá ô tô.");
 
+            // Before assigning any driver to a trip, bring them online first
+            d1.SetAvailable();
+            d2.SetAvailable();
+            d3.SetAvailable();
+
+            // Now AssignDriver won't throw
             var t1 = new Trip(p1.Id, motorRule.Id, q1, q5, VehicleType.Motorbike, 3.5);
-            t1.AssignDriver(d1.Id);
+            t1.AssignDriver(d1);
             t1.MarkArrived();
             t1.StartTrip();
             t1.CompleteTrip(3.5, 12, 15_000m);
+            // Do NOT call await userRepo.Update(d1) here — leave drivers in their original saved state
             await tripRepo.Add(t1);
 
             var t2 = new Trip(p2.Id, carRule.Id, q3, q7, VehicleType.Car, 8.2);
-            t2.AssignDriver(d2.Id);
+            t2.AssignDriver(d2);
             t2.MarkArrived();
             t2.StartTrip();
             await tripRepo.Add(t2);
 
             var t3 = new Trip(p3.Id, motorRule.Id, phuNhuan, tanBinh, VehicleType.Motorbike, 4.1);
-            t3.AssignDriver(d3.Id);
+            t3.AssignDriver(d3);
             await tripRepo.Add(t3);
 
             var t4 = new Trip(p1.Id, motorRule.Id, q5, q1, VehicleType.Motorbike, 2.2);
@@ -249,20 +278,18 @@ namespace OOP
             await tripRepo.Add(t5);
         }
 
-        private static async Task<Passenger> EnsurePassenger(
-            AuthService authService,
-            IUserRepository userRepo,
+        private static async Task<Passenger> EnsurePassenger(UserService userService, IUserRepository userRepo,
             string name,
             string phone)
         {
             var existing = await userRepo.GetByPhone(phone);
             if (existing is Passenger p) return p;
             if (existing != null) throw new InvalidOperationException($"Số điện thoại '{phone}' đã dùng cho role khác.");
-            return await authService.RegisterPassenger(name, phone, "123456");
+            return await userService.RegisterPassenger(name, phone, "123456");
         }
 
         private static async Task<Driver> EnsureDriver(
-            AuthService authService,
+            UserService userService,
             IUserRepository userRepo,
             string name,
             string phone,
@@ -271,9 +298,19 @@ namespace OOP
             string license)
         {
             var existing = await userRepo.GetByPhone(phone);
-            if (existing is Driver d) return d;
+            if (existing is Driver d) 
+            {
+                // Driver already exists (from previous run) — return existing instance.
+                // Status is whatever was persisted from last run (could be Available or Busy).
+                return d;
+            }
             if (existing != null) throw new InvalidOperationException($"Số điện thoại '{phone}' đã dùng cho role khác.");
-            return await authService.RegisterDriver(name, phone, "123456", vehicle, location, license);
+            
+            // First-time creation: set driver to Available so they can receive trip assignments
+            var driver = await userService.RegisterDriver(name, phone, "123456", vehicle, location, license);
+            driver.SetAvailable(); 
+            await userRepo.Update(driver);
+            return driver;
         }
     }
 }

@@ -1,6 +1,7 @@
 ﻿﻿using OOP.Infrastructure.Storage;
 using OOP.Domain.Entities;
 using OOP.Domain.Interfaces;
+using OOP.Domain.Enums;
 
 namespace OOP.Infrastructure.Repositories
 {
@@ -33,6 +34,15 @@ namespace OOP.Infrastructure.Repositories
             await EnsureLoaded();
             var trimmed = phone.Trim();
             return Items.Any(u => u.Phone.Trim() == trimmed);
+        }
+
+        public async Task<List<Driver>> GetAvailableDrivers(VehicleType type)
+        {
+            await EnsureLoaded();
+            return Items.OfType<Driver>()
+                .Where(d => d.Status == DriverStatus.Available)
+                .Where(d => d.Vehicle != null && d.Vehicle.Type == type)
+                .ToList();
         }
 
         public async Task Add(User user)
@@ -97,12 +107,6 @@ namespace OOP.Infrastructure.Repositories
             {
                 WriteLock.Release();
             }
-        }
-        public async Task<bool> Exists(string phone)
-        {
-            await EnsureLoaded();
-            var trimmed = phone.Trim();
-            return Items.Any(u => u.Phone.Trim() == trimmed);
         }
     }
 }

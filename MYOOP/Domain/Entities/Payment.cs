@@ -6,28 +6,51 @@ namespace OOP.Domain.Entities
     [DataContract]
     public class Payment
     {
+        #region Properties
         [DataMember] public Guid Id { get; init; }
-        [DataMember] public Guid TripId { get; init; }
-        [DataMember] public decimal Amount { get; init; }
+
+        private Guid _tripId;
+        [DataMember]
+        public Guid TripId
+        {
+            get => _tripId;
+            init => _tripId = value == Guid.Empty
+                ? throw new ArgumentException("TripId không hợp lệ.")
+                : value;
+        }
+
+        private decimal _amount;
+        [DataMember]
+        public decimal Amount
+        {
+            get => _amount;
+            init => _amount = value <= 0
+                ? throw new ArgumentException("Số tiền phải lớn hơn 0.")
+                : value;
+        }
+
         [DataMember] public decimal Commission { get; init; }
-        [DataMember] public decimal CommissionRate { get; init; }
+
+        private decimal _commissionRate;
+        [DataMember]
+        public decimal CommissionRate
+        {
+            get => _commissionRate;
+            init => _commissionRate = value < 0 || value > 1
+                ? throw new ArgumentException("Tỉ lệ hoa hồng phải từ 0 đến 1.")
+                : value;
+        }
+
         [DataMember] public decimal DriverIncome { get; init; }
         [DataMember] public PaymentStatus Status { get; private set; }
         [DataMember] public DateTime? PaidAt { get; private set; }
-
+        #endregion
+        #region Constructors
         protected Payment() { }
 
         public Payment(Guid tripId, decimal amount, decimal commissionRate)
         {
-            if (tripId == Guid.Empty)
-                throw new ArgumentException("TripId không hợp lệ.", nameof(tripId));
-
-            if (amount <= 0)
-                throw new ArgumentException("Số tiền phải lớn hơn 0.", nameof(amount));
-
-            if (commissionRate < 0 || commissionRate > 1)
-                throw new ArgumentException("Tỉ lệ hoa hồng phải từ 0 đến 1.", nameof(commissionRate));
-
+            // Properties will validate automatically via their setters
             Id = Guid.NewGuid();
             TripId = tripId;
             Amount = amount;
@@ -37,16 +60,15 @@ namespace OOP.Domain.Entities
             Status = PaymentStatus.Unpaid;
             PaidAt = null;
         }
-
+        #endregion
         public void MarkPaid()
         {
             if (Status != PaymentStatus.Unpaid)
                 throw new InvalidOperationException("Giao dịch đã được xử lý trước đó.");
 
             Status = PaymentStatus.Paid;
-            PaidAt = DateTime.UtcNow; 
+            PaidAt = DateTime.UtcNow;
         }
-
         public override string ToString() =>
             $"Payment {Id.ToString()[..8]} | {Status} | {Amount:N0} VNĐ" +
             $" (Tài xế nhận: {DriverIncome:N0} VNĐ)";

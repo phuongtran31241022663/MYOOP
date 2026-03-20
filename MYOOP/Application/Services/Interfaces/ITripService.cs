@@ -7,8 +7,8 @@ namespace OOP.Application.Services.Interfaces
     {
         Task<Trip> RequestTrip(
             Guid passengerId,
-            Location pickup,
-            Location destination,
+            GeoLocation pickup,
+            GeoLocation destination,
             VehicleType vehicleType);
 
         Task AssignDriver(Guid tripId, Guid driverId);
@@ -19,8 +19,9 @@ namespace OOP.Application.Services.Interfaces
         Task CancelTrip(Guid tripId, string reason);
         Task<Trip?> GetTrip(Guid tripId);
         Task<List<Trip>> GetTripHistory(Guid userId);
+        Task<List<Trip>> GetByUserId(Guid userId);
         Task<List<Trip>> GetAvailableTripsForDriver(Guid driverId);
-        Task<List<Driver>> GetNearbyDrivers(Location pickup, VehicleType vehicleType, double maxKm);
+        Task<List<Driver>> GetNearbyDrivers(GeoLocation pickup, VehicleType vehicleType, double maxKm);
         Task<Driver?> GetDriverForTrip(Guid tripId);
         Task<int> ExpireSearchingTrips(TimeSpan maxWait);
     }

@@ -1,5 +1,6 @@
-﻿﻿using OOP.Application.Validators;
-using OOP.Domain.Enums;
+﻿using OOP.Domain.Enums;
+using OOP.Domain.Events;
+using OOP.Domain.Entities;
 using System.Runtime.Serialization;
 
 namespace OOP.Domain.Entities
@@ -8,19 +9,63 @@ namespace OOP.Domain.Entities
     [DataContract]
     public class Trip
     {
+        #region Properties
         // ── 1. Định danh ──────────────────────────────────────────────────────
         [DataMember] public Guid Id { get; init; }
-        [DataMember] public Guid PassengerId { get; init; }
+
+        private Guid _passengerId;
+        [DataMember]
+        public Guid PassengerId
+        {
+            get => _passengerId;
+            init => _passengerId = value == Guid.Empty
+                ? throw new ArgumentException("Mã hành khách không hợp lệ.")
+                : value;
+        }
+
         [DataMember] public Guid? DriverId { get; private set; }
         [DataMember] public Guid FareRuleId { get; init; }
 
         // ── 2. Lộ trình ───────────────────────────────────────────────────────
-        [DataMember] public Location PickupLocation { get; init; }
-        [DataMember] public Location DestinationLocation { get; init; }
+        private GeoLocation _pickupLocation = null!;
+        [DataMember]
+        public GeoLocation PickupLocation
+        {
+            get => _pickupLocation;
+            init => _pickupLocation = value ?? throw new ArgumentException("Vị trí đón không được để trống.");
+        }
+
+        private GeoLocation _destinationLocation = null!;
+        [DataMember]
+        public GeoLocation DestinationLocation
+        {
+            get => _destinationLocation;
+            init
+            {
+                if (value == null)
+                    throw new ArgumentException("Vị trí đến không được để trống.");
+                if (GeoLocation.IsSameLocation(_pickupLocation, value))
+                    throw new ArgumentException("Điểm đón và điểm đến không được trùng nhau.");
+                _destinationLocation = value;
+            }
+        }
+
         [DataMember] public VehicleType VehicleType { get; init; }
 
-        // ── 3. Kết quả chuyến (gán sau khi hoàn thành) ───────────────────────
-        [DataMember] public double Distance { get; private set; }  // km
+        // ── 3. Lộ trình chi tiết (waypoints) ───────────────────────
+        [DataMember] public Route? Route { get; private set; }
+
+        // ── 4. Kết quả chuyến ───────────────────────
+        private double _distance;
+        [DataMember]
+        public double Distance
+        {
+            get => _distance;
+            private set => _distance = value <= 0
+                ? throw new ArgumentException("Khoảng cách không hợp lệ.")
+                : value;
+        }
+
         [DataMember] public double Duration { get; private set; }  // phút
         [DataMember] public decimal Fare { get; private set; }
 
@@ -38,62 +83,92 @@ namespace OOP.Domain.Entities
         [DataMember] public DateTime? TimedOutAt { get; private set; }
 
         [DataMember] public bool IsRated { get; private set; } = false;
-        [DataMember] public List<Guid> RejectedDriverIds { get; private set; } = new();
+        
+        // ── 5. Rejected Drivers (serializable) ─────────────────────────────────
+        [DataMember] private List<Guid>? _rejectedDriverIds;
+        private List<Guid> RejectedDriverIdsInternal => _rejectedDriverIds ??= new List<Guid>();
+        public IReadOnlyList<Guid> RejectedDriverIds => RejectedDriverIdsInternal.AsReadOnly();
 
-        protected Trip() { }
+        // ── 6. Domain Events (transient - never persisted) ──────────────────────
+        private List<DomainEvent>? _domainEvents;
+        private List<DomainEvent> DomainEventsInternal => _domainEvents ??= new List<DomainEvent>();
+        public IReadOnlyList<DomainEvent> DomainEvents => DomainEventsInternal.AsReadOnly();
+        #endregion
+        #region Constructors
+        protected Trip() { _domainEvents = new List<DomainEvent>(); }
 
-        public Trip(
-            Guid passengerId,
-            Guid fareRuleId,
-            Location pickupLocation,
-            Location destinationLocation,
-            VehicleType vehicleType,
-            double routeDistance)
+        public Trip(Guid passengerId, Guid fareRuleId,
+      GeoLocation pickup, GeoLocation destination,
+      VehicleType vehicleType, double routeDistance)
         {
-            TripValidator.ValidateRequest(pickupLocation, destinationLocation, vehicleType, routeDistance);
-
-            if (passengerId == Guid.Empty)
-                throw new ArgumentException("PassengerId không hợp lệ.", nameof(passengerId));
-
-            if (fareRuleId == Guid.Empty)
-                throw new ArgumentException("FareRuleId không hợp lệ.", nameof(fareRuleId));
-
             Id = Guid.NewGuid();
             PassengerId = passengerId;
             FareRuleId = fareRuleId;
-            PickupLocation = pickupLocation;
-            DestinationLocation = destinationLocation;
+            // Properties will validate automatically via their setters/initers
+            PickupLocation = pickup;
+            DestinationLocation = destination;
             VehicleType = vehicleType;
             Distance = routeDistance;
-            Status = TripStatus.Requested;
-            RequestedAt = DateTime.UtcNow;   
-        }
 
-        // ── Thay đổi trạng thái ───────────────────────────────────────────────
+            Status = TripStatus.Requested;
+            RequestedAt = DateTime.UtcNow;
+            
+            // Raise TripRequestedEvent
+            AddDomainEvent(new TripRequestedEvent(
+                Id,
+                PassengerId,
+                PickupLocation,
+                DestinationLocation,
+                VehicleType,
+                Distance,
+                Fare));
+        }
+        #endregion
+        #region State
 
         // Requested → Searching
         public void MarkSearching()
         {
             if (Status != TripStatus.Requested)
                 throw new InvalidOperationException(
-                    "Chỉ có thể chuyển sang Searching khi trip đang ở trạng thái Requested.");
+                    "Chỉ có thể chuyển sang tìm tài xế khi chuyến đi đang ở trạng thái Yêu cầu.");
 
             Status = TripStatus.Searching;
+            AddDomainEvent(new TripSearchingEvent(Id));
         }
-
         // Requested → Matched
-        public void AssignDriver(Guid driverId)
+        public void AssignDriver(Driver driver)
         {
+            if (driver == null)
+                throw new ArgumentNullException(nameof(driver));
+
             if (Status != TripStatus.Requested && Status != TripStatus.Searching)
                 throw new InvalidOperationException(
-                    "Chỉ có thể assign driver khi trip đang ở trạng thái Requested/Searching.");
+                    $"Không thể gán tài xế khi trip đang ở trạng thái '{Status}'.");
 
-            if (driverId == Guid.Empty)
-                throw new ArgumentException("DriverId không hợp lệ.", nameof(driverId));
+            if (!driver.IsActive)
+                throw new InvalidOperationException("Tài xế đã bị vô hiệu hóa.");
 
-            DriverId = driverId;
+            if (driver.Status != DriverStatus.Available)
+                throw new InvalidOperationException(
+                    $"Tài xế hiện không sẵn sàng nhận chuyến (trạng thái: '{driver.Status}').");
+
+            if (driver.Vehicle.Type != VehicleType)
+                throw new InvalidOperationException("Loại xe không phù hợp với yêu cầu.");
+
+            if (driver.Id == PassengerId)
+                throw new InvalidOperationException("Tài xế không thể tự đặt chuyến cho mình.");
+
+            DriverId = driver.Id;
             Status = TripStatus.Matched;
-            MatchedAt = DateTime.UtcNow;  
+            MatchedAt = DateTime.UtcNow;
+            
+            AddDomainEvent(new TripMatchedEvent(
+                Id,
+                driver.Id,
+                driver.Name,
+                driver.Phone,
+                $"{driver.Vehicle.Type} - {driver.Vehicle.PlateNumber}"));
         }
 
         // Matched → Arrived
@@ -101,44 +176,72 @@ namespace OOP.Domain.Entities
         {
             if (Status != TripStatus.Matched)
                 throw new InvalidOperationException(
-                    "Driver phải ở trạng thái Matched trước khi Arrived.");
+                    "Tài xế phải ở trạng thái Đã ghép trước khi Đã đến nơi.");
 
             Status = TripStatus.Arrived;
-            ArrivedAt = DateTime.UtcNow;   
+            ArrivedAt = DateTime.UtcNow;
+            
+            AddDomainEvent(new TripArrivedEvent(Id));
         }
 
         // Arrived → Started
         public void StartTrip()
         {
-            TripValidator.ValidateStart(this);
+            if (Status != TripStatus.Arrived)
+                throw new InvalidOperationException(
+                    $"Không thể bắt đầu chuyến khi trạng thái là '{Status}'. Tài xế phải đến nơi đón trước.");
+
+            if (DriverId == null)
+                throw new InvalidOperationException("Chuyến chưa được gán tài xế.");
 
             Status = TripStatus.Started;
-            StartedAt = DateTime.UtcNow;   
+            StartedAt = DateTime.UtcNow;
+            
+            AddDomainEvent(new TripStartedEvent(Id));
         }
 
         // Started → Completed
+        /// <summary>
+        /// Hoàn thành chuyến đi với kết quả GPS thực tế.
+        /// Lưu ý: Distance ghi đè giá trị từ constructor (route distance) bằng khoảng cách GPS thực tế.
+        /// </summary>
         public void CompleteTrip(double distance, double duration, decimal fare)
         {
-            TripValidator.ValidateCompletion(this, distance, fare);
+            if (Status != TripStatus.Started)
+                throw new InvalidOperationException(
+                    $"Không thể hoàn thành chuyến khi trạng thái là '{Status}'. Chuyến phải đang chạy.");
 
+            if (distance <= 0 || duration <= 0 || fare < 0)
+                throw new ArgumentException("Kết quả chuyến đi (quãng đường/thời gian/giá) không hợp lệ.");
+
+            // Ghi đè khoảng cách từ constructor (ước tính) bằng khoảng cách GPS thực tế
             Distance = distance;
             Duration = duration;
             Fare = fare;
+
             Status = TripStatus.Completed;
-            CompletedAt = DateTime.UtcNow; 
+            CompletedAt = DateTime.UtcNow;
+            
+            AddDomainEvent(new TripCompletedEvent(Id, distance, duration, fare, DriverId!.Value));
         }
 
         // Bất kỳ trạng thái nào (trừ Completed/Cancelled) → Cancelled
         public void CancelTrip(string reason)
         {
-            TripValidator.ValidateCancellation(this);
+            if (Status == TripStatus.Completed)
+                throw new InvalidOperationException("Không thể hủy chuyến đã hoàn thành.");
+
+            if (Status == TripStatus.Cancelled)
+                throw new InvalidOperationException("Chuyến đã được hủy trước đó.");
 
             if (string.IsNullOrWhiteSpace(reason))
-                throw new ArgumentException("Lý do hủy không được để trống.", nameof(reason));
+                throw new ArgumentException("Cần cung cấp lý do hủy chuyến.");
 
-            CancelReason = reason;
             Status = TripStatus.Cancelled;
-            CancelledAt = DateTime.UtcNow;   
+            CancelReason = reason;
+            CancelledAt = DateTime.UtcNow;
+            
+            AddDomainEvent(new TripCancelledEvent(Id, reason));
         }
 
         // Searching/Requested → Timeout
@@ -150,7 +253,10 @@ namespace OOP.Domain.Entities
 
             Status = TripStatus.Timeout;
             TimedOutAt = DateTime.UtcNow;
+            
+            AddDomainEvent(new TripTimeoutEvent(Id));
         }
+        #endregion
 
         // ── Ghi nhận kết quả trước khi hoàn thành ────────────────────────────
 
@@ -159,7 +265,7 @@ namespace OOP.Domain.Entities
             EnsureNotFinished(nameof(ApplyFare));
 
             if (fare < 0)
-                throw new ArgumentException("Cước phí không thể âm.", nameof(fare));
+                throw new ArgumentException("Cước phí không hợp lệ.", nameof(fare));
 
             Fare = fare;
         }
@@ -210,8 +316,19 @@ namespace OOP.Domain.Entities
             if (driverId == Guid.Empty)
                 throw new ArgumentException("DriverId không hợp lệ.", nameof(driverId));
 
-            if (!RejectedDriverIds.Contains(driverId))
-                RejectedDriverIds.Add(driverId);
+            if (!RejectedDriverIdsInternal.Contains(driverId))
+                RejectedDriverIdsInternal.Add(driverId);
+        }
+
+        // ── Domain Events ─────────────────────────────────────────────────────
+        private void AddDomainEvent(DomainEvent domainEvent)
+        {
+            DomainEventsInternal.Add(domainEvent);
+        }
+
+        public void ClearDomainEvents()
+        {
+            _domainEvents?.Clear();
         }
 
         public override string ToString() =>

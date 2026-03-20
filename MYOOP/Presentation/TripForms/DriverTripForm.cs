@@ -1,14 +1,15 @@
-﻿﻿﻿﻿using GMap.NET;
+﻿﻿using GMap.NET;
 using GMap.NET.MapProviders;
 using GMap.NET.WindowsForms;
 using GMap.NET.WindowsForms.Markers;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
+using OOP.Presentation.BaseForms;
 
 namespace OOP.Presentation.TripForms
 {
-    public class DriverTripForm : Form
+    public class DriverTripForm : BaseForm
     {
         private readonly Guid _tripId;
         private readonly Guid _driverId;
@@ -51,6 +52,9 @@ namespace OOP.Presentation.TripForms
             _tripService = tripService;
             _routeService = routeService;
             _userService = userService;
+
+            // Subscribe to timer tick once in constructor (not in OnFormLoad)
+            _refreshTimer.Tick += async (_, _) => await RefreshTripAsync();
 
             InitializeUI();
             Load += async (_, _) =>
@@ -175,7 +179,6 @@ namespace OOP.Presentation.TripForms
         private async Task OnFormLoad()
         {
             await RefreshTripAsync();
-            _refreshTimer.Tick += async (_, _) => await RefreshTripAsync();
             _refreshTimer.Start();
         }
 
@@ -359,7 +362,7 @@ namespace OOP.Presentation.TripForms
             if (confirm != DialogResult.Yes) return;
 
             var point = Map.FromLocalToLatLng(x, y);
-            var loc = new OOP.Domain.Entities.Location("Vị trí hiện tại", "Tài xế cập nhật", point.Lat, point.Lng);
+            var loc = new OOP.Domain.Entities.GeoLocation("Vị trí hiện tại", "Tài xế cập nhật", point.Lat, point.Lng);
 
             try
             {

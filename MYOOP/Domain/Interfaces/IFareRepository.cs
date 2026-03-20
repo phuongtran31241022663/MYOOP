@@ -3,7 +3,7 @@ using OOP.Domain.Enums;
 
 namespace OOP.Domain.Interfaces
 {
-    public interface IFareRuleRepository
+    public interface IFareRepository
     {
         Task<List<Fare>> GetAll();
         Task<Fare?> GetById(Guid id);

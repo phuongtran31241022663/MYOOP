@@ -1,15 +1,15 @@
-﻿﻿﻿using OOP.Presentation;
+﻿﻿using OOP.Presentation;
 using OOP.Domain.Entities;
-using OOP.Application.Services.Interfaces;
+using OOP.Presentation.BaseForms;
 
 namespace OOP
 {
-    public class MainForm : Form
+    public class MainForm : BaseForm
     {
         // Sử dụng Delegate/Factory để khởi tạo Form mà không cần quan tâm dependencies bên trong
         private readonly Func<LoginForm> _loginFormFactory;
         private readonly Func<RegisterForm> _registerFormFactory;
-        private readonly IAuthService _authService;
+        private readonly IUserService _userService;
         private readonly Func<Passenger, Form> _passengerDashboardFactory;
         private readonly Func<Driver, Form> _driverDashboardFactory;
 
@@ -26,13 +26,13 @@ namespace OOP
         public MainForm(
             Func<LoginForm> loginFormFactory,
             Func<RegisterForm> registerFormFactory,
-            IAuthService authService,
+            IUserService userService,
             Func<Passenger, Form> passengerDashboardFactory,
             Func<Driver, Form> driverDashboardFactory)
         {
             _loginFormFactory = loginFormFactory ?? throw new ArgumentNullException(nameof(loginFormFactory));
             _registerFormFactory = registerFormFactory ?? throw new ArgumentNullException(nameof(registerFormFactory));
-            _authService = authService ?? throw new ArgumentNullException(nameof(authService));
+            _userService = userService ?? throw new ArgumentNullException(nameof(userService));
             _passengerDashboardFactory = passengerDashboardFactory ?? throw new ArgumentNullException(nameof(passengerDashboardFactory));
             _driverDashboardFactory = driverDashboardFactory ?? throw new ArgumentNullException(nameof(driverDashboardFactory));
 
@@ -181,31 +181,45 @@ namespace OOP
         {
             try
             {
+                // Thêm null checks cho factories
+                if (_userService == null)
+                    throw new InvalidOperationException("UserService chưa được khởi tạo.");
+                
+                if (_passengerDashboardFactory == null)
+                    throw new InvalidOperationException("Passenger factory chưa được khởi tạo.");
+                
+                if (_driverDashboardFactory == null)
+                    throw new InvalidOperationException("Driver factory chưa được khởi tạo.");
+
                 if (_testPassengerForm == null || _testPassengerForm.IsDisposed)
                 {
-                    var user = await _authService.Login("0900000001", "123456");
+                    var user = await _userService.Login("0900000001", "123456");
                     if (user is not Passenger p)
                         throw new InvalidOperationException("Tài khoản KH test không hợp lệ.");
 
                     _testPassengerForm = _passengerDashboardFactory(p);
+                    if (_testPassengerForm == null)
+                        throw new InvalidOperationException("Không thể tạo Passenger form.");
                     _testPassengerForm.FormClosed += (_, _) => _testPassengerForm = null;
                     _testPassengerForm.Show();
                 }
 
                 if (_testDriverForm == null || _testDriverForm.IsDisposed)
                 {
-                    var user = await _authService.Login("0900000003", "123456");
+                    var user = await _userService.Login("0900000003", "123456");
                     if (user is not Driver d)
                         throw new InvalidOperationException("Tài khoản TX test không hợp lệ.");
 
                     _testDriverForm = _driverDashboardFactory(d);
+                    if (_testDriverForm == null)
+                        throw new InvalidOperationException("Không thể tạo Driver form.");
                     _testDriverForm.FormClosed += (_, _) => _testDriverForm = null;
                     _testDriverForm.Show();
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Không thể mở song song",
+                MessageBox.Show(ex.Message + "\n\nStack: " + ex.StackTrace, "Lỗi",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }

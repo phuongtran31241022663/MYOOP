@@ -1,10 +1,10 @@
-﻿using OOP.Application.Services.Interfaces;
-using OOP.Application.Validators;
-using OOP.Domain.Entities;
+﻿using OOP.Domain.Entities;
+using OOP.Domain.Validators;
+using OOP.Presentation.BaseForms;
 
 namespace OOP.Presentation.CoreForms
 {
-    public class ProfileForm : Form
+    public class ProfileForm : BaseDialogForm
     {
         private readonly User _user;
         private readonly IUserService _userService;

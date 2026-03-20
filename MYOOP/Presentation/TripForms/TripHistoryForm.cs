@@ -1,10 +1,10 @@
 ﻿using OOP.Application.Services.Interfaces;
 using OOP.Domain.Interfaces;
-using OOP.Presentation;
+using OOP.Presentation.BaseForms;
 
 namespace OOP.Presentation.TripForms
 {
-    public class TripHistoryForm : Form
+    public class TripHistoryForm : BaseDialogForm
     {
         private readonly Guid _userId;
         private readonly ITripService _tripService;

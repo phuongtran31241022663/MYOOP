@@ -1,14 +1,14 @@
-﻿using OOP.Application.Services.Interfaces;
-using OOP.Domain.Entities;
+﻿using OOP.Domain.Entities;
+using OOP.Presentation.BaseForms;
 
 namespace OOP.Presentation
 {
-    public class LoginForm : Form
+    public class LoginForm : BaseDialogForm
     {
-        private readonly IAuthService _authService;
         private readonly Func<Passenger, Form> _passengerFormFactory;
         private readonly Func<Driver, Form> _driverFormFactory;
         private readonly Func<Admin, Form> _adminFormFactory;
+        private readonly IUserService _userService;
 
         private TextBox _txtPhone = null!;
         private TextBox _txtPassword = null!;
@@ -21,12 +21,12 @@ namespace OOP.Presentation
         private const int CardWidth = 380;
 
         public LoginForm(
-            IAuthService authService,
-            Func<Passenger, Form> passengerFormFactory,
-            Func<Driver, Form> driverFormFactory,
-            Func<Admin, Form> adminFormFactory)
+       IUserService userService,
+       Func<Passenger, Form> passengerFormFactory,
+       Func<Driver, Form> driverFormFactory,
+       Func<Admin, Form> adminFormFactory)
         {
-            _authService = authService ?? throw new ArgumentNullException(nameof(authService));
+            _userService = userService ?? throw new ArgumentNullException(nameof(userService));
             _passengerFormFactory = passengerFormFactory ?? throw new ArgumentNullException(nameof(passengerFormFactory));
             _driverFormFactory = driverFormFactory ?? throw new ArgumentNullException(nameof(driverFormFactory));
             _adminFormFactory = adminFormFactory ?? throw new ArgumentNullException(nameof(adminFormFactory));
@@ -248,21 +248,7 @@ namespace OOP.Presentation
             {
                 string phone = _txtPhone.Text.Trim();
                 string password = _txtPassword.Text;
-
-                if (phone.Length < 9)
-                {
-                    _errorProvider.SetError(_txtPhone, "Số điện thoại không hợp lệ");
-                    _txtPhone.Focus();
-                    return;
-                }
-                if (password.Length < 6)
-                {
-                    _errorProvider.SetError(_txtPassword, "Mật khẩu ít nhất 6 ký tự");
-                    _txtPassword.Focus();
-                    return;
-                }
-
-                var user = await _authService.Login(phone, password);
+                var user = await _userService.Login(phone, password);
 
                 Form? nextForm = user switch
                 {
@@ -284,6 +270,25 @@ namespace OOP.Presentation
                 _txtPassword.Clear();
                 Show();
                 _txtPhone.Focus();
+            }
+            catch (ArgumentException ex)
+            {
+                // Map ArgumentException to ErrorProvider based on error message
+                string errorMsg = ex.Message;
+                if (errorMsg.Contains("điện thoại"))
+                {
+                    _errorProvider.SetError(_txtPhone, errorMsg);
+                    _txtPhone.Focus();
+                }
+                else if (errorMsg.Contains("mật khẩu"))
+                {
+                    _errorProvider.SetError(_txtPassword, errorMsg);
+                    _txtPassword.Focus();
+                }
+                else
+                {
+                    _lblError.Text = errorMsg;
+                }
             }
             catch (UnauthorizedAccessException)
             {
@@ -327,5 +332,3 @@ namespace OOP.Presentation
         }
     }
 }
-
-

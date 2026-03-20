@@ -1,12 +1,13 @@
-﻿﻿﻿﻿using OOP.Application.Services.Interfaces;
+﻿﻿using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
 using OOP.Presentation.TripForms;
+using OOP.Presentation.BaseForms;
 
 namespace OOP.Presentation
 {
-    public class DriverDashboardForm : Form
+    public class DriverDashboardForm : BaseDashboardForm
     {
         // --- Dependencies ---
         private readonly Driver _driver;
@@ -42,6 +43,7 @@ namespace OOP.Presentation
         // --- State ---
         private Trip? _currentTrip;
         private readonly HashSet<Guid> _notifiedTripIds = new();
+        private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 3000 }; // 3 seconds
 
         // --- Constants ---
         private static readonly Color DarkBg = AppTheme.DarkBg;
@@ -79,10 +81,13 @@ namespace OOP.Presentation
             {
                 if (_dgvTrips != null)
                     await LoadAvailableTrips();
+                _refreshTimer.Tick += async (_, _) => await LoadAvailableTrips();
+                _refreshTimer.Start();
             };
 
             FormClosed += (_, _) =>
             {
+                _refreshTimer.Stop();
                 _notification.OnTripUpdated -= OnTripUpdated;
                 _notification.OnDriverNotified -= OnDriverNotified;
             };
@@ -303,6 +308,20 @@ namespace OOP.Presentation
         {
             try
             {
+                // Refresh driver status từ storage trước
+                var refreshedUser = await _userService.GetUserProfile(_driver.Id);
+                if (refreshedUser is Driver refreshedDriver)
+                {
+                    _driver.SyncFrom(refreshedDriver);
+                }
+
+                if (_driver.Status == DriverStatus.Busy)
+                {
+                    MessageBox.Show("Bạn đang có chuyến đi đang chạy. Vui lòng hoàn thành chuyến đó trước.",
+                        "Không thể Online", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
                 _driver.SetAvailable();
                 await PersistDriverStatus();
                 UpdateStatusUI();
@@ -315,18 +334,14 @@ namespace OOP.Presentation
         {
             if (_currentTrip != null)
             {
-                MessageBox.Show("Bạn đang có chuyến đi. Vui lòng hoàn thành trước khi offline.",
-                    "Không thể offline", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Bạn đang có chuyến đi. Vui lòng hoàn thành trước khi đăng xuất.",
+                    "Không thể đăng xuất", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            try
-            {
-                _driver.SetOffline();
-                await PersistDriverStatus();
-                UpdateStatusUI();
-                _dgvTrips.Rows.Clear();
-            }
-            catch (Exception ex) { ShowError(ex.Message); }
+            // Driver không thể tự set offline - chỉ khi tắt app hệ thống sẽ tự đánh dấu
+            // Ở đây chỉ cần thông báo cho driver biết
+            MessageBox.Show("Vui lòng đóng ứng dụng để ngắt kết nối. Trạng thái sẽ tự động chuyển sang Ngoại tuyến.",
+                "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private async Task OnRefreshClicked()
@@ -442,8 +457,8 @@ namespace OOP.Presentation
                 var updatedUser = await _userService.GetUserProfile(_driver.Id);
                 if (updatedUser is Driver updatedDriver)
                 {
-                    // Sync lại các giá trị hiển thị
-                    _driver.UpdateLocation(_driver.Position); // trigger no-op để force
+                    // Sync lại trạng thái driver từ service (status đã được đổi thành Available)
+                    _driver.SyncFrom(updatedDriver);
                 }
 
                 _currentTrip = null;
@@ -476,12 +491,8 @@ namespace OOP.Presentation
 
             if (confirm == DialogResult.Yes)
             {
-                try
-                {
-                    _driver.SetOffline();
-                    await PersistDriverStatus();
-                }
-                catch { /* ignore */ }
+                // Driver không thể tự set offline - khi đóng app hệ thống sẽ tự đánh dấu offline
+                // Hiện tại chỉ đăng xuất khỏi form mà không thay đổi trạng thái driver
                 Close();
             }
         }
@@ -491,6 +502,17 @@ namespace OOP.Presentation
         // Load các trip Requested mà driver có thể nhận (chưa có driver, đúng loại xe)
         private async Task LoadAvailableTrips()
         {
+            // Refresh driver status từ storage trước khi kiểm tra
+            try
+            {
+                var refreshedUser = await _userService.GetUserProfile(_driver.Id);
+                if (refreshedUser is Driver refreshedDriver)
+                {
+                    _driver.SyncFrom(refreshedDriver);
+                }
+            }
+            catch { /* ignore errors, continue with existing data */ }
+
             if (_driver.Status == DriverStatus.Offline)
             {
                 _dgvTrips.Rows.Clear();
@@ -705,7 +727,10 @@ namespace OOP.Presentation
 
                 AddLogEntry(message);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[OnTripUpdated] Error: {ex.Message}");
+            }
         }
 
         private void OnDriverNotified(Guid driverId, string message)
@@ -742,7 +767,7 @@ namespace OOP.Presentation
                     "Chưa chọn", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return null;
             }
-            return (Guid)_dgvTrips.CurrentRow.Cells["TripId"].Value;
+            return (Guid)(_dgvTrips.CurrentRow.Cells["TripId"].Value ?? Guid.Empty);
         }
 
         private static DataGridViewTextBoxColumn MakeCol(

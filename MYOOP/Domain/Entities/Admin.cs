@@ -1,5 +1,4 @@
-﻿﻿using OOP.Domain.Enums;
-using System.Runtime.Serialization;
+﻿﻿using System.Runtime.Serialization;
 
 namespace OOP.Domain.Entities
 {
@@ -11,10 +10,10 @@ namespace OOP.Domain.Entities
             Guid id,
             string name,
             string phone,
-            string hashedPassword,
-            bool isActive)
-            : base(id, name, phone, hashedPassword, isActive, UserRole.Admin)
+            string password)
+            : base(id, name, phone, password)
         {
+            // Admin luôn active - không cần IsActive property
         }
 
         public override string GetInfo()

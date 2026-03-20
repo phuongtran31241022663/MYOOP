@@ -5,7 +5,7 @@ using OOP.Domain.Enums;
 using OOP.Infrastructure.Map;
 using OOP.Presentation;
 using OOP.Presentation.Map;
-using DomainLocation = OOP.Domain.Entities.Location;
+using DomainLocation = OOP.Domain.Entities.GeoLocation;
 
 namespace OOP.Presentation.TripForms
 {
@@ -259,14 +259,41 @@ namespace OOP.Presentation.TripForms
                 if (item.Kind == SuggestionKind.Header || item.Location == null) return;
                 var selected = item.Location;
 
-                string displayText = string.IsNullOrEmpty(selected.Address)
-                    ? selected.Name
-                    : $"{selected.Name}, {selected.Address}";
+                bool isPickup = (_activeTextBox == TextBoxPickup);
 
+                // Kiểm tra trùng lặp điểm đón/đến
+                if (isPickup && TextBoxDestination.Text.Length > 0)
+                {
+                    // Check if selected location matches current destination
+                    var existingDest = _mapControl.DropoffPoint;
+                    if (existingDest.HasValue &&
+                        Math.Abs(selected.Lat - existingDest.Value.Lat) < 0.0001 &&
+                        Math.Abs(selected.Lng - existingDest.Value.Lng) < 0.0001)
+                    {
+                        MessageBox.Show("Điểm đón trùng với điểm đến. Vui lòng chọn địa điểm khác!",
+                            "Cảnh báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                }
+                else if (!isPickup && TextBoxPickup.Text.Length > 0)
+                {
+                    // Check if selected location matches current pickup
+                    var existingPickup = _mapControl.PickupPoint;
+                    if (existingPickup != default(PointLatLng) &&
+                        Math.Abs(selected.Lat - existingPickup.Lat) < 0.0001 &&
+                        Math.Abs(selected.Lng - existingPickup.Lng) < 0.0001)
+                    {
+                        MessageBox.Show("Điểm đến trùng với điểm đón. Vui lòng chọn địa điểm khác!",
+                            "Cảnh báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                }
+
+                // Hiển thị tên địa danh (đã rút gọn) trong TextBox
+                string displayText = TruncateAddress(selected.Name);
                 _activeTextBox.Text = displayText;
                 _lstGlobalSuggestions.Visible = false;
 
-                bool isPickup = (_activeTextBox == TextBoxPickup);
                 await _mapControl.SelectLocation(selected, isPickup);
 
                 AddToHistory(selected);
@@ -295,11 +322,36 @@ namespace OOP.Presentation.TripForms
 
             _mapControl = new MapControl(_http, _routeService) { Dock = DockStyle.Fill };
             _mapControl.SetPickupSelector(() => _activeTextBox == TextBoxPickup || _activeTextBox == null);
-            _mapControl.LocationSelected += (point, address, isPickup) =>
+            _mapControl.LocationSelected += async (point, address, isPickup) =>
             {
                 bool usePickup = _activeTextBox == TextBoxPickup || _activeTextBox == null;
-                if (usePickup) TextBoxPickup.Text = address;
-                else TextBoxDestination.Text = address;
+
+                // Kiểm tra trùng lặp khi click trên bản đồ
+                if (usePickup && _mapControl.DropoffPoint.HasValue)
+                {
+                    var dest = _mapControl.DropoffPoint.Value;
+                    if (Math.Abs(point.Lat - dest.Lat) < 0.0001 && Math.Abs(point.Lng - dest.Lng) < 0.0001)
+                    {
+                        MessageBox.Show("Điểm đón trùng với điểm đến. Vui lòng chọn địa điểm khác!",
+                            "Cảnh báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                }
+                else if (!usePickup && _mapControl.PickupPoint != default(PointLatLng))
+                {
+                    var pickup = _mapControl.PickupPoint;
+                    if (Math.Abs(point.Lat - pickup.Lat) < 0.0001 && Math.Abs(point.Lng - pickup.Lng) < 0.0001)
+                    {
+                        MessageBox.Show("Điểm đến trùng với điểm đón. Vui lòng chọn địa điểm khác!",
+                            "Cảnh báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                }
+
+                // Hiển thị tên rút gọn trong TextBox
+                string displayText = TruncateAddress(address);
+                if (usePickup) TextBoxPickup.Text = displayText;
+                else TextBoxDestination.Text = displayText;
 
                 UpdateRequestButton();
                 _ = UpdateEstimation();
@@ -338,6 +390,15 @@ namespace OOP.Presentation.TripForms
             BuildSuggestionList(query, results ?? new List<DomainLocation>());
         }
 
+        private const int MaxAddressLength = 30;
+
+        private static string TruncateAddress(string address)
+        {
+            if (string.IsNullOrEmpty(address) || address.Length <= MaxAddressLength)
+                return address;
+            return address.Substring(0, MaxAddressLength) + "...";
+        }
+
         private void LstGlobalSuggestions_DrawItem(object? sender, DrawItemEventArgs e)
         {
             if (e.Index < 0) return;
@@ -358,8 +419,9 @@ namespace OOP.Presentation.TripForms
             using var fontName = new Font(e.Font!, FontStyle.Bold);
             using var fontAddr = new Font(e.Font!.FontFamily, 8);
 
+            // Hiển thị tên địa danh (name) phía trên, địa chỉ đầy đủ phía dưới
             string name = loc.Name ?? "";
-            string address = loc.Address ?? "";
+            string address = TruncateAddress(loc.Address ?? "");
 
             e.Graphics.DrawString(name, fontName, Brushes.Black, e.Bounds.X + 5, e.Bounds.Y + 2);
             e.Graphics.DrawString(address, fontAddr, Brushes.Gray, e.Bounds.X + 5, e.Bounds.Y + 22);
@@ -491,7 +553,7 @@ namespace OOP.Presentation.TripForms
                 var pickup = new DomainLocation("Pickup", "Pickup", p1.Lat, p1.Lng);
                 var dest = new DomainLocation("Destination", "Destination", p2.Value.Lat, p2.Value.Lng);
 
-                MapRouteResult route = await _routeService.GetFullRouteAsync(pickup, dest);
+                Route route = await _routeService.GetFullRouteAsync(pickup, dest);
                 if (route == null)
                 {
                     LabelDistance.Text = "Cách: Lỗi tính toán";

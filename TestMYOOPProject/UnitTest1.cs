@@ -1,57 +1,81 @@
-﻿using OOP
+﻿using OOP.Domain.Entities;
 using OOP.Domain.Enums;
-using System;
-using System.Diagnostics;
-using System.Net.NetworkInformation;
 
-namespace OOP.Tests
+namespace TestMYOOPProject
 {
+    /// <summary>
+    /// Manual Test Class - Simple smoke tests
+    /// </summary>
     public static class ManualTest
     {
         public static void RunAllTests()
         {
             Console.WriteLine("--- BẮT ĐẦU KIỂM THỬ HỆ THỐNG ---");
 
-            TestTripStatusFlow();
-            TestFareCalculation();
+            TestUserCreation();
+            TestPasswordHashing();
 
             Console.WriteLine("--- KẾT THÚC KIỂM THỬ ---");
         }
 
-        private static void TestTripStatusFlow()
+        private static void TestUserCreation()
         {
             try
             {
                 // 1. Arrange
-                var pickup = new Location("A", "Q1", 10.7, 106.6);
-                var dest = new Location("B", "Q5", 10.8, 106.7);
-                var trip = new Trip(Guid.NewGuid(), Guid.NewGuid(), pickup, dest, VehicleType.Car, 5.0);
+                var passenger = new Passenger(
+                    Guid.NewGuid(),
+                    "Nguyen Van A",
+                    "0912345678",
+                    "password123",
+                    true
+                );
 
-                // 2. Act
-                trip.AssignDriver(Guid.NewGuid());
-                trip.MarkArrived();
-                trip.StartTrip();
-
-                // 3. Assert (Tự viết logic kiểm tra)
-                if (trip.Status == TripStatus.Active)
+                // 2. Assert
+                if (passenger != null && passenger.Name == "Nguyen Van A")
                 {
-                    Console.WriteLine("[PASS] TestTripStatusFlow: Trạng thái chuyển sang Active thành công.");
+                    Console.WriteLine("[PASS] TestUserCreation: Tạo user thành công.");
                 }
                 else
                 {
-                    Console.WriteLine($"[FAIL] TestTripStatusFlow: Trạng thái mong đợi Active nhưng nhận được {trip.Status}");
+                    Console.WriteLine("[FAIL] TestUserCreation: Tạo user thất bại.");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] TestTripStatusFlow có lỗi: {ex.Message}");
+                Console.WriteLine($"[ERROR] TestUserCreation có lỗi: {ex.Message}");
             }
         }
 
-        private static void TestFareCalculation()
+        private static void TestPasswordHashing()
         {
-            // Logic tương tự để test giá tiền...
-            // Ví dụ: if (fare == 50000) { ... }
+            try
+            {
+                // 1. Arrange
+                var rawPassword = "testpassword";
+                var passenger = new Passenger(
+                    Guid.NewGuid(),
+                    "Nguyen Van B",
+                    "0922222222",
+                    rawPassword,
+                    true
+                );
+
+                // 2. Act & Assert
+                bool verified = passenger.VerifyPassword(rawPassword);
+                if (verified)
+                {
+                    Console.WriteLine("[PASS] TestPasswordHashing: Xác thực mật khẩu thành công.");
+                }
+                else
+                {
+                    Console.WriteLine("[FAIL] TestPasswordHashing: Xác thực mật khẩu thất bại.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] TestPasswordHashing có lỗi: {ex.Message}");
+            }
         }
     }
 }

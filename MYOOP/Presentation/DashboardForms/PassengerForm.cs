@@ -1,17 +1,13 @@
-﻿﻿using GMap.NET;
-using OOP.Application.Services;
-using OOP.Application.Services.Interfaces;
+﻿using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
-using OOP.Presentation.Map;
 using OOP.Presentation.CoreForms;
-using static OOP.Presentation.AppTheme;
-using static OOP.Presentation.FormHelper;
+using OOP.Presentation.BaseForms;
 
 namespace OOP.Presentation
 {
-    public class PassengerDashboardForm : Form
+    public class PassengerDashboardForm : BaseDashboardForm
     {
         private readonly Passenger _passenger;
         private readonly IUserRepository _userRepo;
@@ -25,7 +21,7 @@ namespace OOP.Presentation
 
         private Label _lblWelcome = null!;
         private Label _lblStats = null!;
-        private const int HeaderHeight = 110;
+        private new const int HeaderHeight = 110;
 
         // ── Trip status strip (visible only when a trip is active) ────────────
         private Panel _pnlTripStatus = null!;
@@ -97,7 +93,11 @@ namespace OOP.Presentation
                 if (InvokeRequired) { BeginInvoke(() => ApplyTripStatus(trip)); return; }
                 ApplyTripStatus(trip);
             }
-            catch { /* swallow — polling should never crash the UI */ }
+            catch (Exception ex)
+            {
+                // Log lỗi nhưng không crash UI
+                System.Diagnostics.Debug.WriteLine($"[RefreshTripStatus] Error: {ex.Message}");
+            }
         }
 
         private void ApplyTripStatus(Trip trip)
@@ -343,7 +343,10 @@ namespace OOP.Presentation
                 if (active != null)
                     _currentTripId = active.Id;
             }
-            catch { /* non-critical */ }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[SyncActiveTripAsync] Error: {ex.Message}");
+            }
         }
 
         private async Task OnCancelTripClicked()
@@ -371,15 +374,19 @@ namespace OOP.Presentation
 
         private void OpenChildForm(Form childForm)
         {
-            using (childForm)
+            // Sử dụng Show() thay vì ShowDialog() để không chặn các form khác
+            childForm.Owner = this;
+            childForm.StartPosition = FormStartPosition.CenterParent;
+            this.Hide();
+            childForm.Show(this);
+            
+            // Đăng ký sự kiện để hiển lại form khi form con đóng
+            childForm.FormClosed += (s, e) =>
             {
-                childForm.StartPosition = FormStartPosition.CenterParent;
-                Hide();
-                childForm.ShowDialog(this);
-            }
-            _lblStats.Text = BuildStatsText();
-            Show();
-            Focus();
+                _lblStats.Text = BuildStatsText();
+                this.Show();
+                this.Activate();
+            };
         }
 
         private string BuildStatsText() =>

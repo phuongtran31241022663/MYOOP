@@ -12,7 +12,7 @@ namespace OOP.Infrastructure.Map
             _mapProvider = mapProvider;
         }
 
-        public async Task<double> CalculateDistanceAsync(Location start, Location end)
+        public async Task<double> CalculateDistanceAsync(GeoLocation start, GeoLocation end)
         {
             var result = await _mapProvider.GetRouteAsync(start, end);
 
@@ -23,18 +23,18 @@ namespace OOP.Infrastructure.Map
             return result.Distance;
         }
 
-        public async Task<List<Location>> GetRoutePointsAsync(Location start, Location end)
+        public async Task<IReadOnlyList<GeoLocation>> GetRoutePointsAsync(GeoLocation start, GeoLocation end)
         {
             var result = await _mapProvider.GetRouteAsync(start, end);
-            return result?.Points ?? new List<Location>();
+            return result?.Points ?? new List<GeoLocation>();
         }
 
-        public async Task<MapRouteResult?> GetFullRouteAsync(Location start, Location end)
+        public async Task<Route?> GetFullRouteAsync(GeoLocation start, GeoLocation end)
         {
             return await _mapProvider.GetRouteAsync(start, end);
         }
 
-        public async Task<bool> IsNearAsync(Location a, Location b, double radiusKm)
+        public async Task<bool> IsNearAsync(GeoLocation a, GeoLocation b, double radiusKm)
         {
             var result = await _mapProvider.GetRouteAsync(a, b);
             if (result == null) return false;

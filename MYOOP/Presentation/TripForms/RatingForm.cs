@@ -1,10 +1,11 @@
-﻿﻿using OOP.Application.Services.Interfaces;
-using OOP.Application.Validators;
+﻿using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
+using OOP.Domain.Validators;
+using OOP.Presentation.BaseForms;
 
 namespace OOP
 {
-    public class RatingForm : Form
+    public class RatingForm : BaseDialogForm
     {
         private ComboBox ComboBoxTrip = null!;
         private NumericUpDown NumericScore = null!;
@@ -136,7 +137,7 @@ namespace OOP
 
             try
             {
-                RatingValidator.ValidateRating(score, comment);
+                RatingValidator.ValidateRating(score);
                 await _ratingService.CreateRating(trip.Id, _passengerId, score, comment);
                 MessageBox.Show("Đánh giá đã được gửi. Cảm ơn bạn!",
                     "Thành công", MessageBoxButtons.OK, MessageBoxIcon.Information);

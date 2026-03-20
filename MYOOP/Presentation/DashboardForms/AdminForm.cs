@@ -1,12 +1,12 @@
-﻿﻿using OOP.Application.Services.Interfaces;
+﻿using OOP.Application.Services.Interfaces;
 using OOP.Application.Services.Models;
-using OOP.Application.Validators;
 using OOP.Domain.Entities;
 using OOP.Domain.Enums;
+using OOP.Presentation.BaseForms;
 
 namespace OOP.Presentation
 {
-    public class AdminDashboardForm : Form
+    public class AdminDashboardForm : BaseDashboardForm
     {
         // --- Dependencies ---
         private readonly Admin _admin;
@@ -158,15 +158,25 @@ namespace OOP.Presentation
                     string rating = u is Driver dr ? $"{dr.AverageRating:F1} ⭐" : "—";
                     string driverStatus = u is Driver d1 ? d1.Status.ToString() : "—";
                     string vehicleType = u is Driver d2 ? d2.Vehicle.Type.ToString() : "—";
+                    
+                    // Xác định role và trạng thái IsActive dựa trên kiểu
+                    string role = u.GetType().Name;
+                    bool isActive = u switch
+                    {
+                        Passenger passenger => passenger.IsActive,
+                        Driver driver => driver.IsActive,
+                        Admin => true, // Admin luôn active
+                        _ => true
+                    };
 
                     _dgvUsers.Rows.Add(
                         u.Id,
                         u.Name,
                         u.Phone,
-                        u.Role.ToString(),
+                        role,
                         driverStatus,
                         vehicleType,
-                        u.IsActive ? "✅ Hoạt động" : "🔒 Đã khóa",
+                        isActive ? "✅ Hoạt động" : "🔒 Đã khóa",
                         rating,
                         trips);
                 }
@@ -179,8 +189,8 @@ namespace OOP.Presentation
             if (_dgvUsers.CurrentRow == null) return;
 
             // 1. Lấy ID của User đang được chọn trên Grid
-            var targetUserId = (Guid)_dgvUsers.CurrentRow.Cells["UserId"].Value;
-            var targetUserName = _dgvUsers.CurrentRow.Cells["Name"].Value.ToString();
+            var targetUserId = (Guid)(_dgvUsers.CurrentRow.Cells["UserId"].Value ?? Guid.Empty);
+            var targetUserName = _dgvUsers.CurrentRow.Cells["Name"].Value?.ToString() ?? string.Empty;
 
             // 2. KIỂM TRA: Admin không được tự khóa chính mình
             if (targetUserId == _admin.Id)
@@ -195,7 +205,7 @@ namespace OOP.Presentation
 
             // 3. Xác nhận hành động (Khóa hoặc Mở khóa)
             // Dựa trên text hiển thị ở cột IsActive để xác định trạng thái hiện tại
-            bool currentlyActive = _dgvUsers.CurrentRow.Cells["IsActive"].Value.ToString()!.Contains("Hoạt động");
+            bool currentlyActive = (_dgvUsers.CurrentRow.Cells["IsActive"].Value?.ToString() ?? string.Empty).Contains("Hoạt động");
             string action = currentlyActive ? "khóa" : "mở khóa";
 
             var confirm = MessageBox.Show(
@@ -337,7 +347,7 @@ namespace OOP.Presentation
                     _dgvTrips.Rows.Add(
                         t.Id,
                         t.PassengerId,
-                        t.DriverId,
+                        t.DriverId ?? Guid.Empty,
                         passengerName,
                         driverName,
                         t.VehicleType.ToString(),
@@ -429,7 +439,6 @@ namespace OOP.Presentation
                         r.VehicleType.ToString(),
                         $"{r.BaseFare:N0} đ",
                         $"{r.PricePerKm:N0} đ",
-                        $"{r.MinimumFare:N0} đ",
                         $"{r.CommissionRate * 100:F0}%",
                         r.UpdatedAt.ToString("dd/MM/yyyy HH:mm"));
                 }
@@ -474,27 +483,22 @@ namespace OOP.Presentation
                 return;
             }
 
-            var ruleId = (Guid)_dgvFareRules.CurrentRow.Cells["FareRuleId"].Value;
+            var ruleId = (Guid)(_dgvFareRules.CurrentRow.Cells["FareRuleId"].Value ?? Guid.Empty);
 
-            // Lấy rule hiện tại để điền sẵn giá trị vào form
             var rules = await _adminService.GetFareRules();
             var selectedRule = rules.FirstOrDefault(r => r.Id == ruleId);
             if (selectedRule == null) return;
 
-            // Mở dialog chỉnh sửa
             using var editForm = new EditFareRuleForm(selectedRule);
             if (editForm.ShowDialog(this) != DialogResult.OK) return;
 
             try
             {
-                // Update rule với giá trị mới từ dialog
-                selectedRule.Update(
+                selectedRule.UpdateRule(
                     editForm.NewBaseFare,
                     editForm.NewPricePerKm,
-                    editForm.NewMinimumFare,
                     editForm.NewCommissionRate);
 
-                FareRuleValidator.ValidateRule(selectedRule);
                 await _adminService.UpdateFareRule(selectedRule);
 
                 await LoadFareRules();
@@ -523,7 +527,6 @@ namespace OOP.Presentation
                     addForm.NewVehicleType,
                     addForm.NewBaseFare,
                     addForm.NewPricePerKm,
-                    addForm.NewMinimumFare,
                     addForm.NewCommissionRate);
 
                 await _adminService.CreateFareRule(rule);
@@ -697,7 +700,6 @@ namespace OOP.Presentation
             // Row 1..4 — input fields
             _numBaseFare = AddNumRow(layout, "Giá mở cửa (đ):", 1, rule.BaseFare, 0, 500_000);
             _numPricePerKm = AddNumRow(layout, "Giá / km (đ):", 2, rule.PricePerKm, 0, 100_000);
-            _numMinimumFare = AddNumRow(layout, "Giá tối thiểu (đ):", 3, rule.MinimumFare, 0, 500_000);
             _numCommission = AddNumRow(layout, "Hoa hồng (%):", 4, rule.CommissionRate * 100, 0, 100,
                                            decimalPlaces: 0);
 

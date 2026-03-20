@@ -1,8 +1,9 @@
 ﻿﻿using OOP.Infrastructure.Storage;
+using OOP.Domain.Interfaces;
 
 namespace OOP.Infrastructure.Repositories
 {
-    public abstract class BaseRepository<T> where T : class
+    public abstract class BaseRepository<T> : ICacheRefreshable where T : class
     {
         protected List<T> Items = new();
 
@@ -40,6 +41,15 @@ namespace OOP.Infrastructure.Repositories
         protected async Task Save()
         {
             await Storage.SaveAsync(FileName, Items);
+        }
+
+        /// <summary>
+        /// Force reload data from storage to refresh cache.
+        /// </summary>
+        public async Task RefreshCacheAsync()
+        {
+            _isLoaded = false;
+            await EnsureLoaded();
         }
     }
 }

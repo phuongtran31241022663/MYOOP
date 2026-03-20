@@ -4,6 +4,6 @@ namespace OOP.Infrastructure.Map
 {
     public interface IMapRouteProvider
     {
-        Task<MapRouteResult?> GetRouteAsync(Location start, Location end);
+        Task<Route?> GetRouteAsync(GeoLocation start, GeoLocation end);
     }
 }

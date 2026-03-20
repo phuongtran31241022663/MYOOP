@@ -1,10 +1,16 @@
-﻿﻿namespace OOP.Presentation
+﻿﻿using System.Drawing;
+
+namespace OOP.Presentation
 {
     /// <summary>
-    /// Tập trung toàn bộ màu sắc và hằng số UI — thay thế các hardcode rải rác trong từng Form.
+    /// Tập trung toàn bộ màu sắc, font, spacing và hằng số UI — thay thế các hardcode rải rác trong từng Form.
     /// </summary>
     public static class AppTheme
     {
+        // ═══════════════════════════════════════════════════════════════
+        // COLORS
+        // ═══════════════════════════════════════════════════════════════
+
         // --- Brand colors ---
         public static readonly Color Primary = Color.FromArgb(18, 113, 255);
         public static readonly Color PrimaryHover = Color.FromArgb(12, 92, 210);
@@ -35,13 +41,70 @@
         public static readonly Color Disabled = Color.FromArgb(205, 210, 218);
         public static readonly Color Highlight = Color.FromArgb(230, 243, 255);
 
-        // --- Sizing ---
+        // ═══════════════════════════════════════════════════════════════
+        // FONTS
+        // ═══════════════════════════════════════════════════════════════
+
+        /// <summary>Font mặc định cho toàn bộ ứng dụng</summary>
+        public static readonly Font DefaultFont = new Font("Segoe UI", 10f);
+
+        /// <summary>Font cho tiêu đề form</summary>
+        public static readonly Font TitleFont = new Font("Segoe UI", 18f, FontStyle.Bold);
+
+        /// <summary>Font cho tiêu đề section</summary>
+        public static readonly Font SectionFont = new Font("Segoe UI", 11f, FontStyle.Bold);
+
+        /// <summary>Font cho nhãn input</summary>
+        public static readonly Font LabelFont = new Font("Segoe UI", 10f, FontStyle.Bold);
+
+        /// <summary>Font cho button</summary>
+        public static readonly Font ButtonFont = new Font("Segoe UI", 10.5f, FontStyle.Bold);
+
+        /// <summary>Font cho text nhỏ, subtitle</summary>
+        public static readonly Font SmallFont = new Font("Segoe UI", 9f);
+
+        // ═══════════════════════════════════════════════════════════════
+        // SIZING
+        // ═══════════════════════════════════════════════════════════════
+
         public const int InputHeight = 38;
         public const int ButtonHeight = 46;
         public const int SmallButton = 36;
         public const int CardRadius = 16;
         public const int CardPadding = 24;
         public const int SectionGap = 16;
+
+        // ═══════════════════════════════════════════════════════════════
+        // FORM SIZING
+        // ═══════════════════════════════════════════════════════════════
+
+        /// <summary>Kích thước mặc định cho dialog forms</summary>
+        public static readonly Size DialogSize = new Size(960, 700);
+
+        /// <summary>Kích thước tối thiểu cho dialog forms</summary>
+        public static readonly Size DialogMinSize = new Size(760, 600);
+
+        /// <summary>Kích thước mặc định cho main forms</summary>
+        public static readonly Size MainFormSize = new Size(1280, 800);
+
+        /// <summary>Kích thước tối thiểu cho main forms</summary>
+        public static readonly Size MainFormMinSize = new Size(1024, 768);
+
+        // ═══════════════════════════════════════════════════════════════
+        // SPACING
+        // ═══════════════════════════════════════════════════════════════
+
+        /// <summary>Đơn vị grid cơ bản (8pt grid system)</summary>
+        public const int GridUnit = 8;
+
+        /// <summary>Khoảng cách giữa các control</summary>
+        public const int ControlGap = 10;
+
+        /// <summary>Khoảng cách padding trong card</summary>
+        public const int CardGap = 12;
+
+        /// <summary>Khoảng cách giữa các section</summary>
+        public const int LargeGap = 24;
     }
 }
 
