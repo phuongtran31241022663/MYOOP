@@ -9,40 +9,43 @@ namespace OOP.Domain.Validators
         public const int MinPasswordLength = 6;
 
         /// <summary>
-        /// Chuẩn hóa và kiểm tra số điện thoại: xóa ký tự đặc biệt, kiểm tra độ dài và đầu số 0
+        /// Validates phone number format: exactly 10 digits, starts with 0
+        /// </summary>
+        public static void ValidatePhone(string phone)
+        {
+            NormalizePhone(phone); // Throws if invalid
+        }
+
+        /// <summary>
+        /// Validates and normalizes phone number. Returns trimmed 10-digit phone.
         /// </summary>
         public static string NormalizePhone(string phone)
         {
             if (string.IsNullOrWhiteSpace(phone))
                 throw new ArgumentException("Số điện thoại không được để trống.");
 
-            // Loại bỏ các ký tự ngăn cách phổ biến để lấy chuỗi số thuần túy
-            string digits = phone
-                .Replace(" ", "")
-                .Replace("-", "")
-                .Replace(".", "") // Thêm dấu chấm vì người Việt hay dùng (vd: 090.123.4567)
-                .Replace("+", "");
+            string trimmed = phone.Trim();
 
-            if (!digits.All(char.IsDigit))
-                throw new ArgumentException("Số điện thoại chỉ được chứa các chữ số.");
+            if (!trimmed.All(char.IsDigit))
+                throw new ArgumentException("Số điện thoại chỉ được chứa chữ số.");
 
-            if (!digits.StartsWith("0"))
-                throw new ArgumentException("Số điện thoại phải bắt đầu bằng chữ số 0.");
+            if (!trimmed.StartsWith("0"))
+                throw new ArgumentException("Số điện thoại phải bắt đầu bằng 0.");
 
-            if (digits.Length != PhoneLength)
-                throw new ArgumentException($"Số điện thoại phải có đúng {PhoneLength} chữ số.");
+            if (trimmed.Length != PhoneLength)
+                throw new ArgumentException($"Số điện thoại phải có {PhoneLength} chữ số.");
 
-            return digits;
+            return trimmed;
         }
 
         /// <summary>
-        /// Kiểm tra tính hợp lệ của mật khẩu
+        /// Validates password: not empty, minimum length
         /// </summary>
         public static void ValidatePassword(string password)
         {
             if (string.IsNullOrWhiteSpace(password))
                 throw new ArgumentException("Mật khẩu không được để trống.");
-
+            
             if (password.Length < MinPasswordLength)
                 throw new ArgumentException($"Mật khẩu phải có ít nhất {MinPasswordLength} ký tự.");
         }

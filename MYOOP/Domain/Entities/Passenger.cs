@@ -6,14 +6,15 @@ namespace OOP.Domain.Entities
     [DataContract]
     public class Passenger : User
     {
+        // Trạng thái tài khoản - chỉ có Passenger và Driver có IsActive
         [DataMember] public bool IsActive { get; private set; } = true;
 
-        private int totalTrips;
+        private int _totalTrips;
         [DataMember]
         public int TotalTrips
         {
-            get => totalTrips;
-            private set => totalTrips = value < 0
+            get => _totalTrips;
+            private set => _totalTrips = value < 0
                 ? throw new InvalidOperationException("Số chuyến không hợp lệ.")
                 : value;
         }

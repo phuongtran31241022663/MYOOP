@@ -1,4 +1,5 @@
-﻿using System.Runtime.Serialization;
+﻿using OOP.Domain.Enums;
+using System.Runtime.Serialization;
 
 namespace OOP.Domain.Entities
 {
@@ -8,39 +9,34 @@ namespace OOP.Domain.Entities
         #region Properties
         [DataMember] public Guid Id { get; init; }
 
-        [DataMember] public string VehicleType { get; private set; }
+        [DataMember] public VehicleType VehicleType { get; private set; }
 
-        /// <summary>
-        /// Alias for VehicleType - for backward compatibility
-        /// </summary>
-        public string VehicleTypeName => VehicleType;
-
-        private decimal baseFare;
+        private decimal _baseFare;
         [DataMember]
         public decimal BaseFare
         {
-            get => baseFare;
-            private set => baseFare = value < 0
-                ? throw new ArgumentException("Giá cơ bản không thể âm.")
+            get => _baseFare;
+            private set => _baseFare = value < 0
+                ? throw new ArgumentException("Giá cơ bản (mở cửa) không thể âm.")
                 : value;
         }
 
-        private decimal pricePerKm;
+        private decimal _pricePerKm;
         [DataMember]
         public decimal PricePerKm
         {
-            get => pricePerKm;
-            private set => pricePerKm = value <= 0
+            get => _pricePerKm;
+            private set => _pricePerKm = value <= 0
                 ? throw new ArgumentException("Giá mỗi km phải lớn hơn 0.")
                 : value;
         }
 
-        private decimal commissionRate;
+        private decimal _commissionRate;
         [DataMember]
         public decimal CommissionRate
         {
-            get => commissionRate;
-            private set => commissionRate = value < 0 || value > 1
+            get => _commissionRate;
+            private set => _commissionRate = value < 0 || value > 1
                 ? throw new ArgumentException("Tỷ lệ hoa hồng phải từ 0 đến 1 (0% – 100%).")
                 : value;
         }
@@ -50,7 +46,7 @@ namespace OOP.Domain.Entities
         #region Constructors
         protected Fare() { }
 
-        public Fare(string vehicleType, decimal baseFare, decimal pricePerKm, decimal commissionRate)
+        public Fare(VehicleType vehicleType, decimal baseFare, decimal pricePerKm, decimal commissionRate)
         {
             Id = Guid.NewGuid();
             // Properties will validate automatically via their setters

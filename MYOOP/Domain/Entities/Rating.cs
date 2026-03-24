@@ -9,48 +9,49 @@ namespace OOP.Domain.Entities
         #region Properties
         [DataMember] public Guid Id { get; init; }
 
-        private Guid tripId;
+        private Guid _tripId;
         [DataMember]
         public Guid TripId
         {
-            get => tripId;
-            init => tripId = value == Guid.Empty
+            get => _tripId;
+            init => _tripId = value == Guid.Empty
                 ? throw new ArgumentException("Trip ID không hợp lệ.")
                 : value;
         }
 
-        private Guid driverId;
+        private Guid _driverId;
         [DataMember]
         public Guid DriverId
         {
-            get => driverId;
-            init => driverId = value == Guid.Empty
+            get => _driverId;
+            init => _driverId = value == Guid.Empty
                 ? throw new ArgumentException("Driver ID không hợp lệ.")
                 : value;
         }
 
-        private Guid passengerId;
+        private Guid _passengerId;
         [DataMember]
         public Guid PassengerId
         {
-            get => passengerId;
-            init => passengerId = value == Guid.Empty
+            get => _passengerId;
+            init => _passengerId = value == Guid.Empty
                 ? throw new ArgumentException("Passenger ID không hợp lệ.")
                 : value;
         }
 
-        private int score;
+        private int _score;
         [DataMember]
         public int Score
         {
-            get => score;
-            private set => score = value < 1 || value > 5
+            get => _score;
+            private set => _score = value < 1 || value > 5
                 ? throw new ArgumentException("Sao phải từ 1-5.")
                 : value;
         }
 
         [DataMember] public string Comment { get; private set; } = string.Empty;
 
+        // Maximum comment length
         private const int MaxCommentLength = 500;
 
         [DataMember] public DateTime CreatedAt { get; init; }

@@ -1,7 +1,6 @@
 ﻿using System.Runtime.Serialization;
 using System.Security.Cryptography;
 using System.Text;
-using System.Xml.Linq;
 
 namespace OOP.Domain.Entities
 {
@@ -11,14 +10,8 @@ namespace OOP.Domain.Entities
     [KnownType(typeof(Admin))]
     public abstract class User
     {
-        // Cấu hình PBKDF2
-        private const int SaltSize = 16;
-        private const int HashSize = 32;
-        private const int Iterations = 100000;
-
         #region Properties
         [DataMember] public Guid Id { get; private set; }
-        [DataMember] public DateTime CreatedAt { get; protected set; }
         // Thông tin cá nhân
         private string name = string.Empty;
         [DataMember]
@@ -29,7 +22,8 @@ namespace OOP.Domain.Entities
             {
                 if (string.IsNullOrWhiteSpace(value))
                     throw new ArgumentException("Họ tên không được để trống.");
-                name = value.Trim();
+
+                name = value;
             }
         }
         private string phone = string.Empty;
@@ -41,31 +35,66 @@ namespace OOP.Domain.Entities
             {
                 if (string.IsNullOrWhiteSpace(value))
                     throw new ArgumentException("Số điện thoại không được để trống.");
-                phone = value.Trim();
+
+                string digits = value.Replace(" ", "").Replace("+", "").Replace("-", "");
+
+                if (!digits.All(char.IsDigit))
+                    throw new ArgumentException("Số điện thoại chỉ được chứa chữ số.");
+
+                if (!digits.StartsWith("0"))
+                    throw new ArgumentException("Số điện thoại phải bắt đầu bằng 0.");
+
+                if (digits.Length != 10)
+                    throw new ArgumentException("Số điện thoại phải có 10 chữ số.");
+
+                phone = digits;
             }
         }
-        // Mật khẩu (đã hash với format: base64(salt):base64(hash))
+        // Mật khẩu
         private string password = string.Empty;
         [DataMember]
         public string Password
         {
             get => password;
-            private set => password = value;
+            protected set
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                    throw new ArgumentException("Mật khẩu không được để trống.");
+
+                if (value.Length < 6)
+                    throw new ArgumentException("Mật khẩu phải có ít nhất 6 ký tự.");
+
+                password = value;
+            }
         }
         #endregion
         #region Constructors
-        protected User() { name = string.Empty; phone = string.Empty; password = string.Empty; CreatedAt = DateTime.UtcNow; }
+        protected User() { name = string.Empty; phone = string.Empty; password = string.Empty; }
         protected User(Guid id, string name, string phone, string password)
         {
-            if (id == Guid.Empty)
-                throw new ArgumentException("ID không hợp lệ.");
-            Id = id;
-            CreatedAt = DateTime.UtcNow;
+            List<string> errors = new List<string>();
+            if (id == Guid.Empty) errors.Add("ID không hợp lệ.");
+            else Id = id;
+
+            // Validate raw password before hashing
+            if (string.IsNullOrWhiteSpace(password))
+                errors.Add("Mật khẩu không được để trống.");
+            else if (password.Length < 6)
+                errors.Add("Mật khẩu phải có ít nhất 6 ký tự.");
+
+            try { Name = name; }
+            catch (ArgumentException ex) { errors.Add(ex.Message); }
+            try { Phone = phone; }
+            catch (ArgumentException ex) { errors.Add(ex.Message); }
+
+            if (errors.Count > 0)
+            {
+                throw new ArgumentException(string.Join("\n", errors));
+            }
 
             Name = name;
-            Phone = Validators.UserValidator.NormalizePhone(phone);
-            Validators.UserValidator.ValidatePassword(password);
-            // Store hashed password with PBKDF2
+            Phone = phone;
+            // Store hashed password directly without validation (hash will be longer than 6 chars)
             this.password = HashPassword(password);
         }
         #endregion
@@ -76,62 +105,33 @@ namespace OOP.Domain.Entities
         }
         public void UpdatePhone(string newPhone)
         {
-            Phone = Validators.UserValidator.NormalizePhone(newPhone);
+            Phone = newPhone;
         }
-
-        /// <summary>
-        /// Hash password using PBKDF2 with random salt.
-        /// Returns format: base64(salt):base64(hash)
-        /// </summary>
         public static string HashPassword(string rawPassword)
         {
-            // Generate random salt
-            byte[] salt = RandomNumberGenerator.GetBytes(SaltSize);
-
-            // Hash password using PBKDF2
-            byte[] hash = Rfc2898DeriveBytes.Pbkdf2(
-                rawPassword,
-                salt,
-                Iterations,
-                HashAlgorithmName.SHA256,
-                HashSize);
-
-            // Return salt:hash format
-            return $"{Convert.ToBase64String(salt)}:{Convert.ToBase64String(hash)}";
+            byte[] inputBytes = Encoding.UTF8.GetBytes(rawPassword);
+            byte[] hashBytes = SHA256.HashData(inputBytes);
+            return Convert.ToBase64String(hashBytes);
         }
-
-        /// <summary>
-        /// Verify password against stored hash.
-        /// Uses fixed-time comparison to prevent timing attacks.
-        /// </summary>
         public bool VerifyPassword(string rawInput)
         {
-            if (string.IsNullOrEmpty(password) || string.IsNullOrEmpty(rawInput))
+            if (string.IsNullOrEmpty(Password))
                 return false;
-            var parts = password.Split(':');
-            if (parts.Length != 2)
-                return false;
-
+                
             try
             {
-                byte[] salt = Convert.FromBase64String(parts[0]);
-                byte[] storedHash = Convert.FromBase64String(parts[1]);
-
-                byte[] computedHash = Rfc2898DeriveBytes.Pbkdf2(
-                    rawInput,
-                    salt,
-                    Iterations,
-                    HashAlgorithmName.SHA256,
-                    HashSize);
-
-                return CryptographicOperations.FixedTimeEquals(storedHash, computedHash);
+                byte[] inputBytes = Encoding.UTF8.GetBytes(rawInput);
+                byte[] hashBytes = SHA256.HashData(inputBytes);
+                return CryptographicOperations.FixedTimeEquals(
+                    Convert.FromBase64String(Password),
+                    hashBytes
+                );
             }
             catch (FormatException)
             {
                 return false;
             }
         }
-
         public void ChangePassword(string oldRaw, string newRaw)
         {
             if (!VerifyPassword(oldRaw))
@@ -140,7 +140,11 @@ namespace OOP.Domain.Entities
             if (oldRaw == newRaw)
                 throw new InvalidOperationException("Mật khẩu mới không được trùng với mật khẩu cũ.");
 
-            // Store new hashed password
+            // Validate new password length before hashing
+            if (newRaw.Length < 6)
+                throw new ArgumentException("Mật khẩu mới phải có ít nhất 6 ký tự.");
+
+            // Store hashed password directly
             this.password = HashPassword(newRaw);
         }
         public virtual string GetInfo()
