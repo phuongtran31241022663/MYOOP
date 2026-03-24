@@ -1,5 +1,5 @@
-﻿using OOP.Domain.Enums;
-using System.Runtime.Serialization;
+﻿using System.Runtime.Serialization;
+using OOP.Domain.Enums;
 
 namespace OOP.Domain.Entities
 {
@@ -28,12 +28,8 @@ namespace OOP.Domain.Entities
             get => _plateNumber;
             private set => _plateNumber = string.IsNullOrWhiteSpace(value)
                 ? throw new ArgumentException("Biển số xe không được để trống.")
-                : value.Length < 7
-                    ? throw new ArgumentException("Biển số xe không đúng định dạng.")
-                    : value.Trim();
+                : value.Trim();
         }
-
-        [DataMember] public VehicleType Type { get; private set; }
 
         private string _brand = string.Empty;
         [DataMember]
@@ -74,7 +70,10 @@ namespace OOP.Domain.Entities
                 ? throw new ArgumentException("Sức chứa không hợp lệ.")
                 : value;
         }
-
+        public abstract string GetVehicleType();
+        public abstract VehicleType GetVehicleTypeEnum();
+        public string GetVehicleTypeName() => GetVehicleType();
+        public abstract bool IsCar();
         public abstract double GetAverageSpeed(); // km/h
         public abstract double GetMaxPickupDistance(); // km
         #endregion
@@ -83,7 +82,6 @@ namespace OOP.Domain.Entities
 
         protected Vehicle(
              Guid driverId,
-             VehicleType type,
              string plateNumber,
              string brand,
              string model,
@@ -91,9 +89,7 @@ namespace OOP.Domain.Entities
              int capacity)
         {
             Id = Guid.NewGuid();
-            // Properties will validate automatically via their setters
             DriverId = driverId;
-            Type = type;
             PlateNumber = plateNumber;
             Brand = brand;
             Model = model;
@@ -108,7 +104,6 @@ namespace OOP.Domain.Entities
              string color,
              int capacity)
         {
-            // Properties will validate automatically via their setters
             PlateNumber = plateNumber;
             Brand = brand;
             Model = model;
@@ -117,7 +112,7 @@ namespace OOP.Domain.Entities
         }
 
         public override string ToString() =>
-            $"{Brand} {Model} | {PlateNumber} | {Capacity} chỗ | {Type}";
+            $"{Brand} {Model} | {PlateNumber} | {Capacity} chỗ | {GetVehicleType()}";
     }
 
     [DataContract]
@@ -127,8 +122,12 @@ namespace OOP.Domain.Entities
 
         public Motorbike(Guid driverId, string plateNumber,
                        string brand, string model, string color)
-          : base(driverId, VehicleType.Motorbike, plateNumber, brand, model, color, 2)
+          : base(driverId, plateNumber, brand, model, color, 2)
         { }
+
+        public override string GetVehicleType() => "Motorbike";
+        public override VehicleType GetVehicleTypeEnum() => VehicleType.Motorbike;
+        public override bool IsCar() => false;
 
         public override double GetAverageSpeed() => 35;
         public override double GetMaxPickupDistance() => 5;
@@ -140,9 +139,15 @@ namespace OOP.Domain.Entities
         protected Car() { }
 
         public Car(Guid driverId, string plateNumber,
-               string brand, string model, string color, int capacity)
-        : base(driverId, VehicleType.Car, plateNumber, brand, model, color, capacity)
-        { }
+           string brand, string model, string color, int capacity)
+           : base(driverId, plateNumber, brand, model, color, capacity)
+        {
+            if (capacity < 4)
+                throw new ArgumentException("Xe ô tô phải có ít nhất 4 chỗ ngồi.");
+        }
+        public override string GetVehicleType() => "Car";
+        public override VehicleType GetVehicleTypeEnum() => VehicleType.Car;
+        public override bool IsCar() => true;
 
         public override double GetAverageSpeed() => 55;
         public override double GetMaxPickupDistance() => 7;

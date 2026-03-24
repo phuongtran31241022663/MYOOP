@@ -8,56 +8,48 @@ namespace OOP.Domain.Entities
     {
         #region Properties
         [DataMember] public Guid Id { get; private set; }
-        private double _distance;
+        private double distance;
         [DataMember]
         public double Distance
         {
-            get => _distance;
-            private set => _distance = value <= 0
+            get => distance;
+            private set => distance = value < 0
                 ? throw new ArgumentException("Khoảng cách không hợp lệ.")
                 : value;
         }
 
-        private double _duration;
+        private double duration;
         [DataMember]
         public double Duration
         {
-            get => _duration;
-            private set => _duration = value <= 0
-                ? throw new ArgumentException("Thời gian không hợp lệ.")
-                : value;
+            get => duration;
+            // Chỉ dùng để hiển thị thời gian ước tính, không validate chặt
+            private set => duration = value;
         }
 
-        [DataMember] private List<GeoLocation> _points = new();
-        public IReadOnlyList<GeoLocation> Points => _points.AsReadOnly();
+        [DataMember] private List<GeoLocation> points = new();
+        public IReadOnlyList<GeoLocation> Points => points.AsReadOnly();
 
-        public void AddPoint(GeoLocation point)
-        {
-            _points.Add(point ?? throw new ArgumentNullException("Điểm không được null."));
-        }
-
-        public void ClearPoints() => _points.Clear();
-
-        private GeoLocation _start = null!;
+        private GeoLocation start = null!;
         [DataMember]
         public GeoLocation Start
         {
-            get => _start;
-            set => _start = value ?? throw new ArgumentNullException("Điểm bắt đầu không được null.");
+            get => start;
+            set => start = value ?? throw new ArgumentNullException("Điểm bắt đầu không được null.");
         }
 
-        private GeoLocation _end = null!;
+        private GeoLocation end = null!;
         [DataMember]
         public GeoLocation End
         {
-            get => _end;
+            get => end;
             set
             {
                 if (value == null)
                     throw new ArgumentNullException("Điểm kết thúc không được null.");
-                if (_start != null && GeoLocation.IsSameLocation(_start, value))
+                if (start != null && GeoLocation.IsSameLocation(start, value))
                     throw new ArgumentException("Điểm bắt đầu và kết thúc không được trùng nhau.");
-                _end = value;
+                end = value;
             }
         }
         #endregion
@@ -72,14 +64,8 @@ namespace OOP.Domain.Entities
             End = end;
             Distance = distance;
             Duration = duration;
-            _points = points ?? new List<GeoLocation>();
+            this.points = points ?? new List<GeoLocation>();
         }
         #endregion
-        public GeoLocation GetLocationAtProgress(double progress)
-        {
-            if (Points.Count == 0) return Start;
-            int index = (int)(progress * (Points.Count - 1));
-            return Points[index];
-        }
     }
 }

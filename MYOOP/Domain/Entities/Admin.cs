@@ -13,7 +13,6 @@ namespace OOP.Domain.Entities
             string password)
             : base(id, name, phone, password)
         {
-            // Admin luôn active - không cần IsActive property
         }
 
         public override string GetInfo()

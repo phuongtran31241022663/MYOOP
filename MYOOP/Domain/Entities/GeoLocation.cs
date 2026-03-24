@@ -35,11 +35,8 @@ namespace OOP.Domain.Entities
         {
             if (a == null || b == null) return false;
             const double threshold = 0.0001; // ~10m
-            // Use <= to treat exactly at threshold as "outside" (not same location)
-            // This handles floating-point precision issues where 0.0001 + epsilon might evaluate differently
             return Math.Abs(a.Lat - b.Lat) <= threshold && Math.Abs(a.Lng - b.Lng) <= threshold;
         }
-
         public override string ToString()
         {
             return $"{Name} ({Lat:F5}, {Lng:F5})";

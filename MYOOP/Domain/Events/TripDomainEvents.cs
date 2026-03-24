@@ -19,27 +19,27 @@ namespace OOP.Domain.Events
     public class TripRequestedEvent : DomainEvent
     {
         public Guid PassengerId { get; }
-        public GeoLocation PickupLocation { get; }
-        public GeoLocation DestinationLocation { get; }
-        public VehicleType VehicleType { get; }
-        public double EstimatedDistance { get; }
-        public decimal EstimatedFare { get; }
+        public GeoLocation Pickup { get; }
+        public GeoLocation Destination { get; }
+        public string VehicleType { get; }
+        public double Distance { get; }
+        public decimal Fare { get; }
 
         public TripRequestedEvent(
             Guid tripId,
             Guid passengerId,
             GeoLocation pickup,
             GeoLocation destination,
-            VehicleType vehicleType,
-            double estimatedDistance,
-            decimal estimatedFare) : base(tripId)
+            string VehicleType,
+            double distance,
+            decimal fare) : base(tripId)
         {
             PassengerId = passengerId;
-            PickupLocation = pickup;
-            DestinationLocation = destination;
-            VehicleType = vehicleType;
-            EstimatedDistance = estimatedDistance;
-            EstimatedFare = estimatedFare;
+            Pickup = pickup;
+            Destination = destination;
+            VehicleType = VehicleType;
+           Distance = distance;
+           Fare = fare;
         }
     }
 
