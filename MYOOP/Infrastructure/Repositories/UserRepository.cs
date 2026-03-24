@@ -1,7 +1,7 @@
 ﻿﻿using OOP.Infrastructure.Storage;
 using OOP.Domain.Entities;
-using OOP.Domain.Interfaces;
 using OOP.Domain.Enums;
+using OOP.Domain.Interfaces;
 
 namespace OOP.Infrastructure.Repositories
 {
@@ -36,13 +36,68 @@ namespace OOP.Infrastructure.Repositories
             return Items.Any(u => u.Phone.Trim() == trimmed);
         }
 
-        public async Task<List<Driver>> GetAvailableDrivers(VehicleType type)
+        public async Task<List<Driver>> GetActiveDrivers(string VehicleType)
         {
             await EnsureLoaded();
             return Items.OfType<Driver>()
-                .Where(d => d.Status == DriverStatus.Available)
-                .Where(d => d.Vehicle != null && d.Vehicle.Type == type)
+                .Where(d => d.Status == DriverStatus.Active)
+                .Where(d => d.Vehicle != null && string.Equals(d.Vehicle.GetVehicleType(), VehicleType, StringComparison.OrdinalIgnoreCase))
                 .ToList();
+        }
+
+        public async Task<Driver?> TryReserveDriver(string VehicleType)
+        {
+            await EnsureLoaded();
+            await WriteLock.WaitAsync();
+            try
+            {
+                // Tìm tài xế Active đầu tiên với vehicle type phù hợp
+                var driver = Items.OfType<Driver>()
+                    .FirstOrDefault(d =>
+                        d.Status == DriverStatus.Active &&
+                        d.Vehicle != null &&
+                        string.Equals(d.Vehicle.GetVehicleType(), VehicleType, StringComparison.OrdinalIgnoreCase));
+
+                if (driver == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("[TryReserveDriver] No Active drivers found");
+                    return null;
+                }
+
+                // CRITICAL: Guard check - verify driver is still Active before setting OnTrip
+                // This prevents double reservation and ensures atomic operation
+                if (driver.Status != DriverStatus.Active)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[TryReserveDriver] Driver {driver.Name} no longer Active (status: {driver.Status})");
+                    return null;
+                }
+
+                try
+                {
+                    driver.SetOnTrip();
+                }
+                catch (InvalidOperationException ex)
+                {
+                    // Should not happen due to guard above, but handle gracefully
+                    System.Diagnostics.Debug.WriteLine($"[TryReserveDriver] Failed to set OnTrip: {ex.Message}");
+                    return null;
+                }
+                
+                // Save the status change to storage
+                await Save();
+                
+                System.Diagnostics.Debug.WriteLine($"[TryReserveDriver] Successfully reserved driver {driver.Name} (ID: {driver.Id})");
+                return driver;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TryReserveDriver] Error: {ex.Message}");
+                return null;
+            }
+            finally
+            {
+                WriteLock.Release();
+            }
         }
 
         public async Task Add(User user)
@@ -100,6 +155,31 @@ namespace OOP.Infrastructure.Repositories
 
                 if (count == 0)
                     throw new KeyNotFoundException($"Không tìm thấy user với Id '{userId}'.");
+
+                await Save();
+            }
+            finally
+            {
+                WriteLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Cập nhật location của driver mà không ghi đè các trường khác (bao gồm Status)
+        /// </summary>
+        public async Task UpdateDriverLocation(Guid driverId, GeoLocation location)
+        {
+            await EnsureLoaded();
+
+            await WriteLock.WaitAsync();
+            try
+            {
+                var driver = Items.OfType<Driver>().FirstOrDefault(d => d.Id == driverId);
+                if (driver == null)
+                    throw new KeyNotFoundException($"Không tìm thấy driver với Id '{driverId}'.");
+
+                // Sử dụng method UpdateLocation để chỉ cập nhật Position, giữ nguyên các trường khác
+                driver.UpdateLocation(location);
 
                 await Save();
             }

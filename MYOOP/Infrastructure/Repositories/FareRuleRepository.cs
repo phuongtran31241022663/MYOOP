@@ -1,5 +1,4 @@
 ﻿﻿using OOP.Domain.Entities;
-using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
 using OOP.Infrastructure.Storage;
 
@@ -20,16 +19,23 @@ namespace OOP.Infrastructure.Repositories
         {
             if (_seeded) return;
 
-            await _seedLock.WaitAsync();
+            bool lockAcquired = false;
             try
             {
+                await _seedLock.WaitAsync();
+                lockAcquired = true;
                 if (_seeded) return;
                 await SeedDefaultRules();
                 _seeded = true;
             }
+            catch
+            {
+                throw;
+            }
             finally
             {
-                _seedLock.Release();
+                try { if (lockAcquired) _seedLock.Release(); }
+                catch { /* ignore */ }
             }
         }
 
@@ -40,14 +46,14 @@ namespace OOP.Infrastructure.Repositories
 
             // Motorbike: Siêu rẻ
             Items.Add(new Fare(
-                vehicleType: VehicleType.Motorbike,
+                vehicleType: "Motorbike",
                 baseFare: 10000m,      // Giá mở cửa 10k
                 pricePerKm: 5000m,     // 5k mỗi km
                 commissionRate: DefaultCommission));
 
             // Car: Rẻ nhưng cao hơn xe máy
             Items.Add(new Fare(
-                vehicleType: VehicleType.Car,
+                vehicleType: "Car",
                 baseFare: 15000m,     
                 pricePerKm: 10000m,    // 10k mỗi km
                 commissionRate: DefaultCommission));
@@ -65,10 +71,11 @@ namespace OOP.Infrastructure.Repositories
             await EnsureSeeded();
             return Items.FirstOrDefault(r => r.Id == id);
         }
-        public async Task<Fare?> GetByVehicleType(VehicleType type)
+        public async Task<Fare?> GetByVehicleType(string VehicleType)
         {
             await EnsureSeeded();
-            return Items.FirstOrDefault(r => r.VehicleType == type);
+            return Items.FirstOrDefault(r => 
+                string.Equals(r.VehicleType, VehicleType, StringComparison.OrdinalIgnoreCase));
         }
 
         public async Task Add(Fare rule)

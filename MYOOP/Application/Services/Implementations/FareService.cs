@@ -1,6 +1,5 @@
 ﻿using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
-using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
 
 namespace OOP.Application.Services
@@ -14,9 +13,9 @@ namespace OOP.Application.Services
             _fareRuleRepo = fareRuleRepo ?? throw new ArgumentNullException(nameof(fareRuleRepo));
         }
 
-        public async Task<Fare?> GetFareRule(VehicleType vehicleType)
+        public async Task<Fare?> GetFareRule(string VehicleType)
         {
-            return await _fareRuleRepo.GetByVehicleType(vehicleType);
+            return await _fareRuleRepo.GetByVehicleType(VehicleType);
         }
         public async Task<decimal> CalculateFare(Trip trip)
         {

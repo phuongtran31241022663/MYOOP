@@ -12,27 +12,29 @@ namespace OOP.Application.Services
         private readonly IRouteService _routeService;
         private readonly ITripService _tripService;
 
-        private readonly Dictionary<Guid, (Guid driverId, Route route, int index, bool toPickup)> _simulations
-            = new();
+        // tripId → (driverId, route, currentIndex, isToPickup)
+        private readonly Dictionary<Guid, (Guid driverId, Route route, int index, bool toPickup)>
+            _simulations = new();
 
         public SimulationService(
             IUserRepository userRepo,
             ITripRepository tripRepo,
-            INotificationService _,
+            INotificationService _,          // injected but not used here
             ITripService tripService,
             IRouteService routeService)
         {
-            _tripRepo = tripRepo;
-            _userRepo = userRepo;
-            _routeService = routeService;
-            _tripService = tripService;
+            _tripRepo = tripRepo ?? throw new ArgumentNullException(nameof(tripRepo));
+            _userRepo = userRepo ?? throw new ArgumentNullException(nameof(userRepo));
+            _routeService = routeService ?? throw new ArgumentNullException(nameof(routeService));
+            _tripService = tripService ?? throw new ArgumentNullException(nameof(tripService));
         }
+
+        // ── Setup simulations ─────────────────────────────────────────────────
 
         public async Task SimulateDriverToPickup(Guid tripId)
         {
             if (tripId == Guid.Empty)
                 throw new ArgumentException("Trip ID không hợp lệ.", nameof(tripId));
-
             if (_simulations.ContainsKey(tripId)) return;
 
             var trip = await _tripRepo.GetById(tripId)
@@ -47,21 +49,19 @@ namespace OOP.Application.Services
             if (driver.Position == null)
                 throw new InvalidOperationException("Driver không có vị trí.");
 
-            var route = await _routeService.GetFullRouteAsync(
-                driver.Position,
-                trip.PickupLocation);
+            var route = await _routeService.GetFullRouteAsync(driver.Position, trip.Pickup)
+                ?? throw new InvalidOperationException("Không lấy được lộ trình.");
 
-            if (route == null || route.Points.Count < 2)
-                throw new InvalidOperationException("Không lấy được lộ trình.");
+            if (route.Points.Count < 2)
+                throw new InvalidOperationException("Lộ trình quá ngắn.");
 
-            _simulations[tripId] = (driver.Id, route, 0, true);
+            _simulations[tripId] = (driver.Id, route, 0, toPickup: true);
         }
 
         public async Task SimulateTripToDestination(Guid tripId)
         {
             if (tripId == Guid.Empty)
                 throw new ArgumentException("Trip ID không hợp lệ.", nameof(tripId));
-
             if (_simulations.ContainsKey(tripId)) return;
 
             var trip = await _tripRepo.GetById(tripId)
@@ -70,88 +70,93 @@ namespace OOP.Application.Services
             if (!trip.DriverId.HasValue)
                 throw new InvalidOperationException("Trip chưa có driver.");
 
-            if (trip.PickupLocation == null || trip.DestinationLocation == null)
-                throw new InvalidOperationException("Trip không có địa điểm đón hoặc trả.");
-
             var route = await _routeService.GetFullRouteAsync(
-                trip.PickupLocation,
-                trip.DestinationLocation);
+                    trip.Pickup, trip.Destination)
+                ?? throw new InvalidOperationException("Không lấy được lộ trình.");
 
-            if (route == null || route.Points.Count < 2)
-                throw new InvalidOperationException("Không lấy được lộ trình.");
+            if (route.Points.Count < 2)
+                throw new InvalidOperationException("Lộ trình quá ngắn.");
 
-            _simulations[tripId] = (trip.DriverId.Value, route, 0, false);
+            _simulations[tripId] = (trip.DriverId.Value, route, 0, toPickup: false);
         }
 
-        public async Task Tick()
-        {
-            var activeTripIds = _simulations.Keys.ToList();
+		// ── Tick ─────────────────────────────────────────────────────────────
 
-            foreach (var tripId in activeTripIds)
-            {
-                if (!_simulations.TryGetValue(tripId, out var sim)) continue;
+		public async Task Tick()
+		{
+			var activeIds = _simulations.Keys.ToList();
+			var tasks = new List<Task>();
 
-                var nextIndex = sim.index;
+			foreach (var tripId in activeIds)
+			{
+				if (!_simulations.TryGetValue(tripId, out var sim)) continue;
 
-                if (nextIndex >= sim.route.Points.Count)
-                {
-                    await HandleArrival(tripId, sim.toPickup);
-                    continue;
-                }
+				// 1. Kiểm tra nếu đã đi hết lộ trình
+				if (sim.index >= sim.route.Points.Count)
+				{
+					tasks.Add(HandleArrival(tripId, sim.toPickup));
+					continue;
+				}
 
-                // NOTE: Chỉ cập nhật vị trí trong bộ nhớ để hiển thị UI
-                // KHÔNG ghi vào repository - sẽ gây race condition với TripService
-                // TripService quản lý trạng thái driver (Available/Busy)
-                var driver = await _userRepo.GetById(sim.driverId) as Driver;
-                if (driver != null)
-                {
-                    driver.UpdateLocation(sim.route.Points[nextIndex]);
-                    // ĐÃ XÓA: await _userRepo.Update(driver);
-                    // Lý do: Simulation chỉ nên update vị trí cho UI, không persist
-                    // Việc ghi đè sẽ làm mất trạng thái đúng (Available -> Busy)
-                }
+				// 2. Cập nhật vị trí hiện tại
+				var currentPoint = sim.route.Points[sim.index];
+				tasks.Add(_userRepo.UpdateDriverLocation(sim.driverId, currentPoint));
 
-                _simulations[tripId] = (sim.driverId, sim.route, nextIndex + 1, sim.toPickup);
-            }
-        }
+				// 3. Tăng index cho nhịp sau
+				_simulations[tripId] = (sim.driverId, sim.route, sim.index + 1, sim.toPickup);
+			}
 
-        private async Task HandleArrival(Guid tripId, bool toPickup)
-        {
-            if (toPickup)
-            {
-                await _tripService.MarkArrived(tripId);
-            }
-            else
-            {
-                await _tripService.CompleteTrip(tripId);
-            }
+			await Task.WhenAll(tasks); // Chạy song song các lệnh update DB
+		}
 
-            _simulations.Remove(tripId);
-        }
+		// ── Other ISimulationService methods ─────────────────────────────────
 
-        public Task StopSimulation(Guid tripId)
+		public Task StopSimulation(Guid tripId)
         {
             _simulations.Remove(tripId);
             return Task.CompletedTask;
         }
 
-        public async Task UpdateDriverLocations()
+        public bool IsSimulationActive(Guid tripId)
         {
-            await Tick();
+            // Simulation đang chạy nếu tồn tại trong dictionary
+            return _simulations.ContainsKey(tripId);
         }
+
+        public async Task UpdateDriverLocations() => await Tick();
 
         public async Task SimulateTripProgress(Guid tripId)
         {
             var trip = await _tripRepo.GetById(tripId);
             if (trip == null) return;
+			await StopSimulation(tripId);
+			switch (trip.Status)
+            {
+                case TripStatus.Matched:
+                    await SimulateDriverToPickup(tripId);
+                    break;
+                case TripStatus.Started:
+                    await SimulateTripToDestination(tripId);
+                    break;
+                case TripStatus.Completed:
+                case TripStatus.Cancelled:
+                    await StopSimulation(tripId);
+                    break;
+            }
+        }
 
-            if (trip.Status == TripStatus.Matched)
-                await SimulateDriverToPickup(tripId);
-            else if (trip.Status == TripStatus.Started)
-                await SimulateTripToDestination(tripId);
-            else if (trip.Status == TripStatus.Completed || trip.Status == TripStatus.Cancelled)
-                await StopSimulation(tripId);
+        // ── Helper ────────────────────────────────────────────────────────────
+
+        private async Task HandleArrival(Guid tripId, bool toPickup)
+        {
+            _simulations.Remove(tripId);
+
+            // KHÔNG tự động chuyển trạng thái Arrived
+            // Tài xế phải nhấn nút "Đã đến điểm đón" để xác nhận
+            // Chỉ dừng simulation, driver phải tự xác nhận đến nơi
+            
+            // else: Do NOT auto-complete trip - driver must manually click to complete
+            // The trip simulation stops at destination, driver will manually complete
         }
     }
 }
-

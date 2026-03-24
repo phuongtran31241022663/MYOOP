@@ -16,7 +16,22 @@ public interface IUserService
     Task UpdateUserProfile(Guid userId, string name, string phone);
 
     Task UpdateDriverVehicle(Guid driverId, Vehicle vehicle);
+    Task UpdateDriverVehicleInfo(
+        Guid driverId,
+        string vehicleType,
+        string plateNumber,
+        string brand,
+        string model,
+        string color,
+        int capacity);
     Task UpdateDriverLicense(Guid driverId, string license);
     Task UpdateDriverLocation(Guid driverId, GeoLocation location);
+    Task TopUpDriverWallet(Guid driverId, decimal amount);
     Task UpdateDriverStatus(Guid driverId, DriverStatus status);
+
+    /// <summary>
+    /// Force recover driver status to Active. Bypasses domain rules.
+    /// Used for recovery from stale OnTrip state when trips are unexpectedly ended.
+    /// </summary>
+    Task ForceRecoverDriverStatus(Guid driverId);
 }

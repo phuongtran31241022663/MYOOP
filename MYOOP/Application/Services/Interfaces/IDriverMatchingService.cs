@@ -1,16 +1,24 @@
 ﻿﻿using OOP.Domain.Entities;
-using OOP.Domain.Enums;
 
 namespace OOP.Application.Services.Interfaces
 {
     public interface IDriverMatchingService
     {
-        Task<Driver?> FindAvailableDriver(
+        Task<Driver?> FindActiveDriver(
             GeoLocation pickup,
-            VehicleType vehicleType,
+            string VehicleType,
             IEnumerable<Guid>? excludedDriverIds = null);
 
+        /// <summary>
+        /// Tìm và reserve một tài xế một cách atomic (tránh race condition)
+        /// </summary>
+        Task<Driver?> FindAndReserveDriver(
+            GeoLocation pickup,
+            string VehicleType,
+            IEnumerable<Guid>? excludedDriverIds = null,
+            int retryCount = 0);
+
         Task<Driver?> MatchDriver(Trip trip);
-        Task<List<Driver>> GetNearbyDrivers(GeoLocation pickup, VehicleType vehicleType, double maxKm);
+        Task<List<Driver>> GetNearbyDrivers(GeoLocation pickup, string VehicleType, double maxKm);
     }
 }

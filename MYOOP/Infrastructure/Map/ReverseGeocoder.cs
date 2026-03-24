@@ -33,9 +33,6 @@ namespace OOP.Infrastructure.Map
             _http = http;
         }
 
-        /// <summary>
-        /// Từ tọa độ → GeoLocation với tên địa danh ưu tiên (nếu có), địa chỉ chi tiết.
-        /// </summary>
         public async Task<GeoLocation> ReverseAsync(double lat, double lng)
         {
             // --- Bước 1: Tìm POI gần nhất trong bán kính PoiRadiusMeters ---
@@ -132,7 +129,7 @@ namespace OOP.Infrastructure.Map
             }
             catch
             {
-                // Hoàn toàn offline — trả về tọa độ thô
+                // Hoàn toàn Inactive — trả về tọa độ thô
                 string fallback = $"{lat:F5}, {lng:F5}";
                 return new GeoLocation(fallback, fallback, lat, lng);
             }
@@ -174,9 +171,6 @@ namespace OOP.Infrastructure.Map
             return parts.Count > 0 ? string.Join(", ", parts) : "";
         }
 
-        /// <summary>
-        /// Lấy tên ngắn từ response: ưu tiên name của POI, fallback về tên đường.
-        /// </summary>
         private static string ExtractShortName(JsonElement root, string fallback)
         {
             if (root.TryGetProperty("name", out var n) && !string.IsNullOrWhiteSpace(n.GetString()))

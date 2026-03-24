@@ -10,7 +10,9 @@ namespace OOP.Infrastructure.Repositories
         protected readonly IStorage Storage;
 
         protected readonly string FileName;
-        protected readonly SemaphoreSlim WriteLock = new(1, 1);
+        // Static SemaphoreSlim shared across all instances - prevents race condition without DB
+        private static readonly SemaphoreSlim _globalWriteLock = new(1, 1);
+        private readonly SemaphoreSlim _instanceWriteLock = new(1, 1);
         private readonly SemaphoreSlim _loadLock = new(1, 1);
         private volatile bool _isLoaded = false;
 
@@ -20,21 +22,33 @@ namespace OOP.Infrastructure.Repositories
             FileName = fileName;
         }
 
+        /// <summary>
+        /// Gets the write lock. Override in subclass to use instance lock, or use static for global lock.
+        /// </summary>
+        protected virtual SemaphoreSlim WriteLock => _instanceWriteLock;
+
         protected async Task EnsureLoaded()
         {
             if (_isLoaded) return;
 
-            await _loadLock.WaitAsync();
+            bool lockAcquired = false;
             try
             {
+                await _loadLock.WaitAsync();
+                lockAcquired = true;
                 if (_isLoaded) return;
                 var loaded = await Storage.LoadAsync<List<T>>(FileName);
                 Items = loaded ?? new List<T>();
                 _isLoaded = true;
             }
+            catch
+            {
+                throw;
+            }
             finally
             {
-                _loadLock.Release();
+                try { if (lockAcquired) _loadLock.Release(); }
+                catch { /* ignore */ }
             }
         }
 

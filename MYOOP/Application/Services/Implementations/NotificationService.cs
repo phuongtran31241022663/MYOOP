@@ -1,5 +1,6 @@
 ﻿﻿using OOP.Application.Services.Interfaces;
 using OOP.Domain.Interfaces;
+using OOP.Infrastructure;
 
 
 namespace OOP.Application.Services
@@ -46,6 +47,7 @@ namespace OOP.Application.Services
 
             var log = $"[DRIVER] {user.Name}: {message}";
             Console.WriteLine(log);
+            Logger.Instance.LogDebug($"Driver notification: {user.Name} - {message}");
 
             OnDriverNotified?.Invoke(driverId, message);
         }

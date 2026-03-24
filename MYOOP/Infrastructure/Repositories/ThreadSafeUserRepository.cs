@@ -68,12 +68,25 @@ namespace OOP.Infrastructure.Repositories
             }
         }
 
-        public async Task<List<Driver>> GetAvailableDrivers(VehicleType type)
+        public async Task<List<Driver>> GetActiveDrivers(string VehicleType)
         {
             await _lock.WaitAsync();
             try
             {
-                return await _innerRepository.GetAvailableDrivers(type);
+                return await _innerRepository.GetActiveDrivers(VehicleType);
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+
+        public async Task<Driver?> TryReserveDriver(string VehicleType)
+        {
+            await _lock.WaitAsync();
+            try
+            {
+                return await _innerRepository.TryReserveDriver(VehicleType);
             }
             finally
             {
@@ -117,6 +130,22 @@ namespace OOP.Infrastructure.Repositories
             try
             {
                 await _innerRepository.Remove(userId);
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Cập nhật location của driver mà không ghi đè các trường khác (bao gồm Status)
+        /// </summary>
+        public async Task UpdateDriverLocation(Guid driverId, GeoLocation location)
+        {
+            await _lock.WaitAsync();
+            try
+            {
+                await _innerRepository.UpdateDriverLocation(driverId, location);
             }
             finally
             {

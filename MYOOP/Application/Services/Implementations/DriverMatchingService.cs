@@ -1,6 +1,6 @@
 ﻿using OOP.Domain.Entities;
-using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
+using OOP.Domain.Policies;
 using OOP.Application.Services.Interfaces;
 using System.Diagnostics;
 
@@ -12,140 +12,155 @@ namespace OOP.Application.Services
         private readonly ITripRepository _tripRepo;
         private readonly IRouteService _routeService;
 
-        public DriverMatchingService(IUserRepository userRepo, ITripRepository tripRepo, IRouteService routeService)
+        private const int MaxRetryAttempts = 5;
+
+        public DriverMatchingService(
+            IUserRepository userRepo,
+            ITripRepository tripRepo,
+            IRouteService routeService)
         {
             _userRepo = userRepo ?? throw new ArgumentNullException(nameof(userRepo));
             _tripRepo = tripRepo ?? throw new ArgumentNullException(nameof(tripRepo));
             _routeService = routeService ?? throw new ArgumentNullException(nameof(routeService));
         }
 
-        public async Task<Driver?> FindAvailableDriver(
+        // ── Find (read-only, no reservation) ─────────────────────────────────
+
+        public async Task<Driver?> FindActiveDriver(
             GeoLocation pickup,
-            VehicleType vehicleType,
+            string VehicleType,
             IEnumerable<Guid>? excludedDriverIds = null)
         {
-            if (pickup == null)
-                throw new ArgumentNullException(nameof(pickup), "Điểm đón không được để trống.");
+            if (pickup == null) throw new ArgumentNullException(nameof(pickup));
 
             var excluded = excludedDriverIds != null
                 ? new HashSet<Guid>(excludedDriverIds)
                 : new HashSet<Guid>();
 
-            Debug.WriteLine($"[DriverMatching] Finding available drivers for pickup: {pickup.Address}, vehicleType: {vehicleType}");
+            await RefreshCacheIfSupported();
 
-            // Refresh cache to get latest driver status from storage
-            if (_userRepo is ICacheRefreshable cacheRefreshable)
-            {
-                await cacheRefreshable.RefreshCacheAsync();
-            }
-
-            var allUsers = await _userRepo.GetAvailableDrivers(vehicleType);
-            Debug.WriteLine($"[DriverMatching] Repository returned {allUsers.Count} drivers");
-
-            foreach (var driver in allUsers)
-            {
-                Debug.WriteLine($"[DriverMatching] Driver from repo: {driver.Id}, Name: {driver.Name}, Status: {driver.Status}, IsActive: {driver.IsActive}, Vehicle: {driver.Vehicle?.Type}, Position: {driver.Position?.Address}");
-            }
-
-            var candidates = FilterCandidates(allUsers.OfType<Driver>(), vehicleType)
-                .Where(d => !excluded.Contains(d.Id))
+            var allUsers = await _userRepo.GetActiveDrivers(VehicleType);
+            var candidates = DriverMatchingPolicy
+                .FilterEligibleCandidates(allUsers.OfType<Driver>(), VehicleType, excluded)
                 .ToList();
 
-            Debug.WriteLine($"[DriverMatching] After filtering: {candidates.Count} candidates");
+            Debug.WriteLine($"[FindActive] {candidates.Count} candidates for {VehicleType}");
+            if (!candidates.Any()) return null;
 
-            if (!candidates.Any())
+            var tasks = candidates.Select(async d => new
             {
-                Debug.WriteLine("[DriverMatching] No candidates found after filtering!");
-                return null;
-            }
-
-            foreach (var candidate in candidates)
-            {
-                Debug.WriteLine($"[DriverMatching] Candidate: {candidate.Name} at {candidate.Position.Address}");
-            }
-
-            var tasks = candidates.Select(async driver => new
-            {
-                Driver = driver,
-                Distance = await _routeService.CalculateDistanceAsync(driver.Position, pickup)
+                Driver = d,
+                Distance = await _routeService.CalculateDistanceAsync(d.Position, pickup)
             });
 
             var results = await Task.WhenAll(tasks);
-
-            var best = results
-                .OrderBy(r => r.Distance)
-                .FirstOrDefault();
-
-            Debug.WriteLine($"[DriverMatching] Best driver: {best?.Driver.Name} at distance {best?.Distance}km");
-
-            return best?.Driver;
+            return results.OrderBy(r => r.Distance).FirstOrDefault()?.Driver;
         }
-        private IEnumerable<Driver> FilterCandidates(IEnumerable<Driver> drivers, VehicleType type)
+
+        // ── Find + Reserve (atomic, with retry) ───────────────────────────────
+
+        /// <summary>
+        /// Tìm và giữ tài xế. Tránh race condition bằng TryReserveDriver.
+        /// Có giới hạn retry để tránh CPU spike.
+        /// </summary>
+        public async Task<Driver?> FindAndReserveDriver(
+            GeoLocation pickup,
+            string VehicleType,
+            IEnumerable<Guid>? excludedDriverIds = null,
+            int retryCount = 0)
         {
-            Debug.WriteLine($"[DriverMatching] FilterCandidates called with {drivers.Count()} drivers, vehicleType: {type}");
-
-            foreach (var d in drivers)
+            if (pickup == null) throw new ArgumentNullException(nameof(pickup));
+            if (retryCount >= MaxRetryAttempts)
             {
-                bool isActive = d.IsActive;
-                bool isAvailable = d.Status == DriverStatus.Available;
-                bool hasVehicle = d.Vehicle != null;
-                bool correctType = d.Vehicle?.Type == type;
-                bool hasPosition = d.Position != null;
-
-                Debug.WriteLine($"[DriverMatching] Filtering Driver {d.Name}: IsActive={isActive}, Status={d.Status} (Available={isAvailable}), HasVehicle={hasVehicle}, CorrectType={correctType}, HasPosition={hasPosition}");
-
-                if (!isActive) Debug.WriteLine($"[DriverMatching]   -> EXCLUDED: Driver is not active");
-                if (!isAvailable) Debug.WriteLine($"[DriverMatching]   -> EXCLUDED: Status is {d.Status}, not Available");
-                if (!hasVehicle) Debug.WriteLine($"[DriverMatching]   -> EXCLUDED: No vehicle assigned");
-                if (hasVehicle && !correctType) Debug.WriteLine($"[DriverMatching]   -> EXCLUDED: Vehicle type {d.Vehicle?.Type} != {type}");
-                if (!hasPosition) Debug.WriteLine($"[DriverMatching]   -> EXCLUDED: No position set");
+                Debug.WriteLine($"[FindAndReserve] Max retries ({MaxRetryAttempts}) reached.");
+                return null;
             }
 
-            return drivers.Where(d =>
-                d.IsActive &&
-                d.Status == DriverStatus.Available &&
-                d.Vehicle != null &&
-                d.Vehicle.Type == type &&
-                d.Position != null);
+            var excluded = excludedDriverIds != null
+                ? new HashSet<Guid>(excludedDriverIds)
+                : new HashSet<Guid>();
+
+            await RefreshCacheIfSupported();
+
+            var reserved = await _userRepo.TryReserveDriver(VehicleType);
+            if (reserved == null)
+            {
+                Debug.WriteLine("[FindAndReserve] No Active drivers.");
+                return null;
+            }
+
+            if (excluded.Contains(reserved.Id))
+            {
+                Debug.WriteLine($"[FindAndReserve] Reserved driver {reserved.Name} is excluded — releasing and retrying.");
+
+                // Release back to Active
+                reserved.SetActive();
+                await _userRepo.Update(reserved);
+
+                // Small delay to reduce CPU spike during retry (exponential backoff)
+                if (retryCount < MaxRetryAttempts - 1)
+                {
+                    await Task.Delay(50 * (retryCount + 1)); // 50ms, 100ms, 150ms...
+                }
+
+                // Retry with this driver added to excluded to prevent infinite loop
+                var newExcluded = new HashSet<Guid>(excluded) { reserved.Id };
+                return await FindAndReserveDriver(pickup, VehicleType, newExcluded, retryCount + 1);
+            }
+
+            Debug.WriteLine($"[FindAndReserve] Reserved driver: {reserved.Name}");
+            return reserved;
         }
+
+        // ── Match (used by auto-matching flow) ────────────────────────────────
+
         public async Task<Driver?> MatchDriver(Trip trip)
         {
             if (trip == null) throw new ArgumentNullException(nameof(trip));
 
-            var driver = await FindAvailableDriver(trip.PickupLocation, trip.VehicleType, trip.RejectedDriverIds);
+            var driver = await FindActiveDriver(
+                trip.Pickup, trip.VehicleType, trip.RejectedDriverIds);
 
             if (driver == null) return null;
 
-            driver.SetBusy();
+            driver.SetOnTrip();
             trip.AssignDriver(driver);
             return driver;
         }
 
-        public async Task<List<Driver>> GetNearbyDrivers(GeoLocation pickup, VehicleType vehicleType, double maxKm)
+        // ── Nearby drivers (for passenger map display) ────────────────────────
+
+        public async Task<List<Driver>> GetNearbyDrivers(
+            GeoLocation pickup, string VehicleType, double maxKm)
         {
-            if(pickup == null)
-                throw new ArgumentNullException(nameof(pickup), "Điểm đón không được để trống.");
+            if (pickup == null) throw new ArgumentNullException(nameof(pickup));
             if (maxKm <= 0) throw new ArgumentException("Bán kính phải lớn hơn 0.", nameof(maxKm));
 
-            var candidates = await _userRepo.GetAvailableDrivers(vehicleType);
-
-            candidates = candidates
-                .Where(d => d.Position != null)
+            var allDrivers = await _userRepo.GetActiveDrivers(VehicleType);
+            var candidates = DriverMatchingPolicy
+                .FilterEligibleCandidates(allDrivers.OfType<Driver>(), VehicleType)
                 .ToList();
 
-            var tasks = candidates.Select(async driver => new
+            var tasks = candidates.Select(async d => new
             {
-                Driver = driver,
-                Distance = await _routeService.CalculateDistanceAsync(driver.Position, pickup)
+                Driver = d,
+                Distance = await _routeService.CalculateDistanceAsync(d.Position, pickup)
             });
 
             var results = await Task.WhenAll(tasks);
-
             return results
                 .Where(r => r.Distance <= maxKm)
                 .OrderBy(r => r.Distance)
                 .Select(r => r.Driver)
                 .ToList();
+        }
+
+        // ── Helper ────────────────────────────────────────────────────────────
+
+        private async Task RefreshCacheIfSupported()
+        {
+            if (_userRepo is ICacheRefreshable cr)
+                await cr.RefreshCacheAsync();
         }
     }
 }
