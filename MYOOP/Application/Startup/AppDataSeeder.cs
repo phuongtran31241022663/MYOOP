@@ -35,50 +35,50 @@ namespace OOP
             var p3 = await EnsurePassenger(userService, userRepo, "Phạm Minh C", "0900000004");
 
             var d1 = await EnsureDriver(
-                userService, userRepo,
-                "Lê Tài Xế", "0900000003", AppRuntime.GenerateRandomLocation("Vị trí", "TP.HCM"),
-                new Motorbike(Guid.NewGuid(), "59X1-12345", "Honda", "Vision", "Đỏ"),
+                userRepo,
+                "L?? T??i X???", "0900000003", AppRuntime.GenerateRandomLocation("V??? tr??", "TP.HCM"),
+                id => new Motorbike(id, "59X1-12345", "Honda", "Vision", "?????"),
                 "A1-12345");
             var d2 = await EnsureDriver(
-                userService, userRepo,
-                "Ngô Tài Xế", "0900000005", AppRuntime.GenerateRandomLocation("Vị trí", "TP.HCM"),
-                new Car(Guid.NewGuid(), "51H-78901", "Toyota", "Vios", "Trắng", 4),
+                userRepo,
+                "Ng?? T??i X???", "0900000005", AppRuntime.GenerateRandomLocation("V??? tr??", "TP.HCM"),
+                id => new Car(id, "51H-78901", "Toyota", "Vios", "Tr???ng", 4),
                 "B2-54321");
             var d3 = await EnsureDriver(
-                userService, userRepo,
-                "Hoàng Tài Xế", "0900000006", AppRuntime.GenerateRandomLocation("Vị trí", "TP.HCM"),
-                new Motorbike(Guid.NewGuid(), "59Y2-67890", "Yamaha", "Sirius", "Đen"),
+                userRepo,
+                "Ho??ng T??i X???", "0900000006", AppRuntime.GenerateRandomLocation("V??? tr??", "TP.HCM"),
+                id => new Motorbike(id, "59Y2-67890", "Yamaha", "Sirius", "??en"),
                 "A1-67890");
 
             var existingTrips = await tripRepo.GetAll();
             if (existingTrips.Count > 0) return;
 
-            var motorRule = await fareRepo.GetByVehicleType("Motorbike")
+            var motorRule = await fareRepo.GetByVehicleType(VehicleType.Motorbike)
                 ?? throw new InvalidOperationException("Không tìm thấy cấu hình giá xe máy.");
-            var carRule = await fareRepo.GetByVehicleType("Car")
+            var carRule = await fareRepo.GetByVehicleType(VehicleType.Car)
                 ?? throw new InvalidOperationException("Không tìm thấy cấu hình giá ô tô.");
 
-            d1.SetActive();
-            d2.SetActive();
-            d3.SetActive();
+            d1.SetAvailable();
+            d2.SetAvailable();
+            d3.SetAvailable();
             await userRepo.Update(d1);
             await userRepo.Update(d2);
             await userRepo.Update(d3);
 
-            var t1 = new Trip(p1.Id, motorRule.Id, q1, q5, "Motorbike", 3.5);
+            var t1 = new Trip(p1.Id, motorRule.Id, q1, q5, VehicleType.Motorbike, 3.5, 50000);
             await tripRepo.Add(t1);
 
-            var t2 = new Trip(p2.Id, carRule.Id, q3, q7, "Car", 8.2);
+            var t2 = new Trip(p2.Id, carRule.Id, q3, q7, VehicleType.Car, 8.2, 120000);
             await tripRepo.Add(t2);
 
-            var t3 = new Trip(p3.Id, motorRule.Id, phuNhuan, tanBinh, "Motorbike", 4.1);
+            var t3 = new Trip(p3.Id, motorRule.Id, phuNhuan, tanBinh, VehicleType.Motorbike, 4.1, 60000);
             await tripRepo.Add(t3);
 
-            var t4 = new Trip(p1.Id, motorRule.Id, q5, q1, "Motorbike", 2.2);
+            var t4 = new Trip(p1.Id, motorRule.Id, q5, q1, VehicleType.Motorbike, 2.2, 35000);
             t4.CancelTrip("Hành khách đổi ý");
             await tripRepo.Add(t4);
 
-            var t5 = new Trip(p2.Id, carRule.Id, tanBinh, q1, "Car", 6.4);
+            var t5 = new Trip(p2.Id, carRule.Id, tanBinh, q1, VehicleType.Car, 6.4, 100000);
             await tripRepo.Add(t5);
         }
 
@@ -95,22 +95,21 @@ namespace OOP
         }
 
         private static async Task<Driver> EnsureDriver(
-            IUserService userService,
             IUserRepository userRepo,
             string name,
             string phone,
             DomainLocation location,
-            Vehicle vehicle,
+            Func<Guid, Vehicle> vehicleFactory,
             string license)
         {
             var existing = await userRepo.GetByPhone(phone);
             if (existing is Driver d)
             {
-                if (d.Status != DriverStatus.Active)
+                if (d.Status != DriverStatus.Available)
                 {
                     try
                     {
-                        d.SetActive();
+                        d.SetAvailable();
                         await userRepo.Update(d);
                     }
                     catch
@@ -122,8 +121,11 @@ namespace OOP
 
             if (existing != null) throw new InvalidOperationException($"Số điện thoại '{phone}' đã dùng cho role khác.");
 
-            var driver = await userService.RegisterDriver(name, phone, "123456", vehicle, location, license);
-            driver.SetActive();
+            var driverId = Guid.NewGuid();
+            var vehicle = vehicleFactory(driverId);
+            var driver = new Driver(driverId, name, phone, "123456", true, vehicle, location, license);
+            await userRepo.Add(driver);
+            driver.SetAvailable();
             await userRepo.Update(driver);
             return driver;
         }

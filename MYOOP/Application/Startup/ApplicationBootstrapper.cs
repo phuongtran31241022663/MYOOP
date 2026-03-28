@@ -1,4 +1,4 @@
-using MYOOP.Presentation.Common.MapComponent;
+using OOP.Presentation.Common.MapComponent;
 using OOP.Application.Services;
 using OOP.Application.Services.Implementations;
 using OOP.Application.Services.Interfaces;
@@ -17,6 +17,9 @@ namespace OOP
     {
         internal static void Run()
         {
+            // Khởi tạo global exception handler trước tiên
+            GlobalExceptionHandler.Initialize();
+            
             var logger = Logger.Instance;
             logger.Info("=== ứng dụng khởi động ===");
 
@@ -47,6 +50,7 @@ namespace OOP
 
             var storage = new JsonStorage(dataPath);
 
+            IDriverRepository driverRepo = new ThreadSafeUserRepository(new UserRepository(storage));
             IUserRepository userRepo = new ThreadSafeUserRepository(new UserRepository(storage));
             ITripRepository tripRepo = new ThreadSafeTripRepository(new TripRepository(storage));
             IFareRepository fareRepo = new FareRuleRepository(storage);
@@ -68,7 +72,7 @@ namespace OOP
                 async (tripId, message) =>
                     await tripNotificationSubscriber.Handle(tripId, message);
 
-            var matchingService = new DriverMatchingService(userRepo, tripRepo, routeService);
+            var matchingService = new DriverMatchingService(driverRepo, userRepo, tripRepo, routeService);
             var adminService = new AdminService(userRepo, tripRepo, fareRepo, paymentRepo);
             var ratingService = new RatingService(ratingRepo, userRepo, tripRepo);
 
@@ -88,6 +92,7 @@ namespace OOP
 
             var simulationService = new SimulationService(
                 userRepo,
+                driverRepo,
                 tripRepo,
                 notificationService,
                 tripService,
@@ -101,11 +106,6 @@ namespace OOP
             {
                 fareRepo.EnsureSeeded().GetAwaiter().GetResult();
                 AppDataSeeder.SeedAsync(tripRepo, userRepo, fareRepo, userService).GetAwaiter().GetResult();
-            }
-            catch (System.Threading.SynchronizationLockException ex)
-            {
-                MessageBox.Show($"Lỗi đồng bộ khi khởi tạo dữ liệu:\n{ex.Message}", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
             }
             catch (Exception ex)
             {
@@ -175,10 +175,6 @@ namespace OOP
                     if (!AppRuntime.SimulationConfig.Enabled) return;
                     await simulationService.UpdateDriverLocations();
                 }
-                catch (System.Threading.SynchronizationLockException ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[Simulation] SynchronizationLockException: {ex.Message}\n{ex.StackTrace}");
-                }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"[Simulation] UpdateDriverLocations error: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
@@ -195,10 +191,6 @@ namespace OOP
                 try
                 {
                     await tripService.ExpireSearchingTrips(AppRuntime.GetTripTimeout());
-                }
-                catch (System.Threading.SynchronizationLockException ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[Timeout] SynchronizationLockException: {ex.Message}\n{ex.StackTrace}");
                 }
                 catch (Exception ex)
                 {

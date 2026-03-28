@@ -130,7 +130,7 @@ namespace OOP.Presentation.Screens.Passenger
             var leftPanel = new Panel
             {
                 Dock = DockStyle.Left,
-                Width = 320,
+                Width = 200,
                 BackColor = AppTheme.CardBg,
                 Padding = new Padding(0)
             };
@@ -201,7 +201,7 @@ namespace OOP.Presentation.Screens.Passenger
 
         private void BuildRatingFormContent()
         {
-            var card = FormHelper.MakeCard(460, 400);
+            var card = FormHelper.MakeCard(200, 350);
             card.Location = new Point(0, 0);
 
             int y = 20;
@@ -211,7 +211,7 @@ namespace OOP.Presentation.Screens.Passenger
             {
                 Font = new Font("Segoe UI", 11f, FontStyle.Bold),
                 ForeColor = AppTheme.TextPrimary,
-                Width = 420,
+                Width = 160,
                 Height = 48,
                 Location = new Point(20, y),
                 AutoEllipsis = true
@@ -219,13 +219,13 @@ namespace OOP.Presentation.Screens.Passenger
             card.Controls.Add(_lblSelectedTrip); y += 56;
 
             // Divider
-            card.Controls.Add(new Panel { Left = 20, Top = y, Width = 420, Height = 1, BackColor = AppTheme.BorderLight }); y += 16;
+            card.Controls.Add(new Panel { Left = 20, Top = y, Width = 160, Height = 1, BackColor = AppTheme.BorderLight }); y += 16;
 
             // Stars
             var lblStarTitle = FormHelper.MakeLabel("Chấm điểm tài xế", 9.5f, foreColor: AppTheme.TextMuted);
-            FormHelper.Place(lblStarTitle, card, 20, y, 200, 18); y += 24;
+            FormHelper.Place(lblStarTitle, card, 20, y, 160, 18); y += 24;
 
-            _pnlStars = new Panel { Left = 20, Top = y, Width = 220, Height = 40 };
+            _pnlStars = new Panel { Left = 20, Top = y, Width = 160, Height = 40 };
             _starButtons = new Button[5];
             for (int i = 0; i < 5; i++)
             {
@@ -233,12 +233,12 @@ namespace OOP.Presentation.Screens.Passenger
                 var btn = new Button
                 {
                     Text = "★",
-                    Width = 40,
-                    Height = 40,
-                    Left = i * 44,
-                    Top = 0,
+                    Width = 30,
+                    Height = 30,
+                    Left = i * 32,
+                    Top = 5,
                     FlatStyle = FlatStyle.Flat,
-                    Font = new Font("Segoe UI", 18f),
+                    Font = new Font("Segoe UI", 14f),
                     Cursor = Cursors.Hand,
                     Tag = score,
                     BackColor = Color.Transparent
@@ -248,30 +248,30 @@ namespace OOP.Presentation.Screens.Passenger
                 _starButtons[i] = btn;
                 _pnlStars.Controls.Add(btn);
             }
-            card.Controls.Add(_pnlStars); y += 52;
+            card.Controls.Add(_pnlStars); y += 40;
 
             // Comment
             _lblCommentHint = FormHelper.MakeLabel("Nhận xét (tùy chọn)", 9.5f, foreColor: AppTheme.TextMuted);
-            FormHelper.Place(_lblCommentHint, card, 20, y, 420, 18); y += 22;
+            FormHelper.Place(_lblCommentHint, card, 20, y, 160, 18); y += 22;
 
             _txtComment = new TextBox
             {
                 Left = 20,
                 Top = y,
-                Width = 420,
-                Height = 90,
+                Width = 160,
+                Height = 80,
                 Multiline = true,
                 ScrollBars = ScrollBars.Vertical,
-                Font = new Font("Segoe UI", 10f),
+                Font = new Font("Segoe UI", 9f),
                 PlaceholderText = "Nhận xét về tài xế, chất lượng dịch vụ...",
                 BorderStyle = BorderStyle.FixedSingle
             };
-            card.Controls.Add(_txtComment); y += 98;
+            card.Controls.Add(_txtComment); y += 88;
 
             // Submit button
-            _btnSubmit = FormHelper.MakeButton("⭐ Gửi đánh giá", AppTheme.Primary, AppTheme.PrimaryHover, height: 44);
-            _btnSubmit.Width = 180;
-            _btnSubmit.Left = 20;
+            _btnSubmit = FormHelper.MakeButton("⭐ Gửi đánh giá", AppTheme.Primary, AppTheme.PrimaryHover, height: 36);
+            _btnSubmit.Width = 120;
+            _btnSubmit.Left = 40;
             _btnSubmit.Top = y;
             _btnSubmit.Click += async (_, _) => await OnSubmitClicked();
             card.Controls.Add(_btnSubmit);
@@ -280,9 +280,9 @@ namespace OOP.Presentation.Screens.Passenger
             _lblSuccess = new Label
             {
                 Text = "✅ Đánh giá đã được gửi thành công!",
-                Left = 210,
+                Left = 20,
                 Top = y + 12,
-                Width = 230,
+                Width = 160,
                 Height = 22,
                 Font = AppTheme.SmallFont,
                 ForeColor = AppTheme.Success,
@@ -482,8 +482,6 @@ namespace OOP.Presentation.Screens.Passenger
 
             try
             {
-                RatingValidator.ValidateRating(_selectedScore);
-
                 await _ratingService.CreateRating(
                     _selectedTrip.Id,
                     _shell.Passenger.Id,

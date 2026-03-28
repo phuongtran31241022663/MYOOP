@@ -13,6 +13,7 @@ namespace OOP.Infrastructure.Repositories
     {
         private readonly ITripRepository _inner;
         private readonly ConcurrentDictionary<Guid, Trip> _tripsCache = new();
+        private readonly SemaphoreSlim _cacheLock = new(1, 1);
         private bool _disposed;
 
         public ThreadSafeTripRepository(ITripRepository inner)
@@ -107,13 +108,36 @@ namespace OOP.Infrastructure.Repositories
             {
                 await cr.RefreshCacheAsync();
                 // Reload cache from inner repository
-                await LoadCacheFromInner();
+                await _cacheLock.WaitAsync();
+                try
+                {
+                    await LoadCacheFromInnerInternal();
+                }
+                finally
+                {
+                    _cacheLock.Release();
+                }
             }
         }
 
         // ── Cache helpers ──────────────────────────────────────────────────────
 
         private async Task LoadCacheFromInner()
+        {
+            if (!_tripsCache.IsEmpty) return;
+            await _cacheLock.WaitAsync();
+            try
+            {
+                if (!_tripsCache.IsEmpty) return;
+                await LoadCacheFromInnerInternal();
+            }
+            finally
+            {
+                _cacheLock.Release();
+            }
+        }
+
+        private async Task LoadCacheFromInnerInternal()
         {
             var trips = await _inner.GetAll();
             _tripsCache.Clear();
@@ -145,6 +169,7 @@ namespace OOP.Infrastructure.Repositories
             _disposed = true;
 
             if (_inner is IDisposable d) d.Dispose();
+            _cacheLock.Dispose();
         }
     }
 }

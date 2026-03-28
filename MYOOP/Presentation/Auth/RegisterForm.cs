@@ -1,5 +1,6 @@
 ﻿using OOP.Presentation.Common.Theme;
 using OOP.Domain.Entities;
+using OOP.Domain.Validators;
 using OOP.Presentation.BaseForms;
 
 namespace OOP.Presentation
@@ -59,13 +60,7 @@ namespace OOP.Presentation
         private void InitForm()
         {
             Text = "Đăng ký tài khoản";
-            StartPosition = FormStartPosition.CenterScreen;
-            Size = new Size(960, 700);
-            MinimumSize = new Size(760, 600);
-            BackColor = AppTheme.PageBg;
             Font = new Font("Segoe UI", 10F);
-            FormBorderStyle = FormBorderStyle.FixedSingle;
-            MaximizeBox = false;
 
             _errorProvider = new ErrorProvider
             {
@@ -109,9 +104,13 @@ namespace OOP.Presentation
             Controls.Add(header);
 
             _cardCommon = FormHelper.MakeCard(CardWidth, 520);
+            _cardCommon.AutoSize = true;
+            _cardCommon.AutoSizeMode = AutoSizeMode.GrowOnly;
             BuildCommonCard(_cardCommon);
 
             _cardVehicle = FormHelper.MakeCard(CardWidth, 520);
+            _cardVehicle.AutoSize = true;
+            _cardVehicle.AutoSizeMode = AutoSizeMode.GrowOnly;
             BuildVehicleCard(_cardVehicle);
 
             Controls.Add(_cardCommon);
@@ -198,6 +197,7 @@ namespace OOP.Presentation
             _txtPassword.Left = 0;
             _txtPassword.Top = 0;
             _txtPassword.Height = InputHeight;
+            _txtPassword.TextChanged += OnRegisterInputChanged;
 
             _btnTogglePass = new Button
             {
@@ -215,11 +215,7 @@ namespace OOP.Presentation
             _btnTogglePass.FlatAppearance.BorderSize = 1;
             _btnTogglePass.FlatAppearance.BorderColor = AppTheme.BorderLight;
             _btnTogglePass.Click += (s, e) =>
-            {
-                _txtPassword.UseSystemPasswordChar = !_txtPassword.UseSystemPasswordChar;
-                _btnTogglePass.Text = _txtPassword.UseSystemPasswordChar ? "👁" : "🔒";
-                _txtPassword.Focus();
-            };
+                FormHelper.TogglePasswordVisibility(_txtPassword, _btnTogglePass);
 
             passRow.Controls.Add(_txtPassword);
             passRow.Controls.Add(_btnTogglePass);
@@ -306,6 +302,7 @@ namespace OOP.Presentation
                 Font = new Font("Segoe UI", 10.5f)
             };
             card.Controls.Add(_numCapacity);
+            y += InputHeight + Gap;
 
             UpdateVehicleTypeUI();
         }
@@ -382,14 +379,47 @@ namespace OOP.Presentation
                 _lblError.Text = ex.Message;
                 if (!(ex is ArgumentException || ex is InvalidOperationException))
                 {
-                    MessageBox.Show($"Lỗi hệ thống: {ex.Message}", "Lỗi",
-                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    FormHelper.ShowError($"Lỗi hệ thống: {ex.Message}");
                 }
             }
             finally
             {
                 SetLoading(false);
             }
+        }
+
+        private void OnRegisterInputChanged(object? sender, EventArgs e)
+        {
+            _lblError.Text = "";
+            _errorProvider.Clear();
+
+            // Validate common fields
+            bool nameOk = _txtName.Text.Trim().Length >= 2;
+            bool phoneOk = _txtPhone.Text.Trim().Length >= 9;
+            bool passOk = _txtPassword.Text.Length >= 6;
+
+            // If driver, also validate vehicle fields
+            bool vehicleOk = !_rdoDriver.Checked || ValidateVehicleFields();
+
+            bool allOk = nameOk && phoneOk && passOk && vehicleOk;
+            _btnRegister.Enabled = allOk;
+            _btnRegister.BackColor = allOk ? AppTheme.Success : AppTheme.Disabled;
+            _btnRegister.Cursor = allOk ? Cursors.Hand : Cursors.Default;
+        }
+
+        private bool ValidateVehicleFields()
+        {
+            if (_cmbVehicleType.SelectedIndex < 0) return false;
+            var item = (VehicleItem)_cmbVehicleType.SelectedItem!;
+            var vehicleValidator = new DomainValidators.VehicleValidator();
+            var errors = vehicleValidator.Validate(
+                _txtPlate.Text.Trim(),
+                _txtBrand.Text.Trim(),
+                _txtModel.Text.Trim(),
+                _txtColor.Text.Trim(),
+                (int)_numCapacity.Value,
+                item.TypeName == "Car");
+            return !errors.Any();
         }
 
         private void OnBackClicked(object? sender, EventArgs e)
@@ -422,6 +452,10 @@ namespace OOP.Presentation
         {
             if (keyData == Keys.Enter && _btnRegister.Enabled)
             {
+                // Don't submit when focused on ComboBox or NumericUpDown
+                if (ActiveControl is ComboBox || ActiveControl is NumericUpDown)
+                    return base.ProcessCmdKey(ref msg, keyData);
+
                 _btnRegister.PerformClick();
                 return true;
             }
@@ -492,33 +526,18 @@ namespace OOP.Presentation
 
         private void SetLoading(bool loading)
         {
-            _btnRegister.Enabled = !loading;
-            _btnRegister.Text = loading ? "Đang đăng ký..." : "Đăng ký";
-            _btnBack.Enabled = !loading;
-            Cursor = loading ? Cursors.WaitCursor : Cursors.Default;
+            FormHelper.SetLoading(_btnRegister, loading, "Đang đăng ký...", "Đăng ký", _btnBack);
         }
 
         private static Label MakeLabel(string text, float size = 9.5f,
             FontStyle style = FontStyle.Bold)
         {
-            return new Label
-            {
-                Text = text,
-                Font = new Font("Segoe UI", size, style),
-                ForeColor = AppTheme.TextMuted,
-                BackColor = Color.Transparent,
-                AutoSize = false
-            };
+            return FormHelper.MakeLabel(text, size, style, foreColor: AppTheme.TextMuted);
         }
 
         private static TextBox MakeInput(string placeholder)
         {
-            return new TextBox
-            {
-                PlaceholderText = placeholder,
-                BorderStyle = BorderStyle.FixedSingle,
-                Font = new Font("Segoe UI", 10.5f)
-            };
+            return FormHelper.MakeInput(placeholder);
         }
 
         private void AddField(Panel card, string labelText, ref int y, TextBox input)

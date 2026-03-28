@@ -1,4 +1,5 @@
 ﻿using OOP.Domain.Entities;
+using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
 using OOP.Domain.Policies;
 using OOP.Application.Services.Interfaces;
@@ -8,27 +9,28 @@ namespace OOP.Application.Services
 {
     public class DriverMatchingService : IDriverMatchingService
     {
+        private readonly IDriverRepository _driverRepo;
         private readonly IUserRepository _userRepo;
         private readonly ITripRepository _tripRepo;
         private readonly IRouteService _routeService;
 
-        private const int MaxRetryAttempts = 5;
-
         public DriverMatchingService(
+            IDriverRepository driverRepo,
             IUserRepository userRepo,
             ITripRepository tripRepo,
             IRouteService routeService)
         {
+            _driverRepo = driverRepo ?? throw new ArgumentNullException(nameof(driverRepo));
             _userRepo = userRepo ?? throw new ArgumentNullException(nameof(userRepo));
             _tripRepo = tripRepo ?? throw new ArgumentNullException(nameof(tripRepo));
             _routeService = routeService ?? throw new ArgumentNullException(nameof(routeService));
         }
 
-        // ── Find (read-only, no reservation) ─────────────────────────────────
+        // Tìm kiếm(chỉ đọc, không thực hiện giữ chỗ/đặt trước).
 
         public async Task<Driver?> FindActiveDriver(
             GeoLocation pickup,
-            string VehicleType,
+            VehicleType VehicleType,
             IEnumerable<Guid>? excludedDriverIds = null)
         {
             if (pickup == null) throw new ArgumentNullException(nameof(pickup));
@@ -39,12 +41,12 @@ namespace OOP.Application.Services
 
             await RefreshCacheIfSupported();
 
-            var allUsers = await _userRepo.GetActiveDrivers(VehicleType);
-            var candidates = DriverMatchingPolicy
+            var allUsers = await _driverRepo.GetActiveDrivers(VehicleType);
+            var candidates = MatchingPolicies.DriverMatchingPolicy
                 .FilterEligibleCandidates(allUsers.OfType<Driver>(), VehicleType, excluded)
                 .ToList();
 
-            Debug.WriteLine($"[FindActive] {candidates.Count} candidates for {VehicleType}");
+            Debug.WriteLine($"[Tìm tài xế hoạt động] có {candidates.Count} ứng viên cho loại xe {VehicleType}");
             if (!candidates.Any()) return null;
 
             var tasks = candidates.Select(async d => new
@@ -57,62 +59,30 @@ namespace OOP.Application.Services
             return results.OrderBy(r => r.Distance).FirstOrDefault()?.Driver;
         }
 
-        // ── Find + Reserve (atomic, with retry) ───────────────────────────────
-
         /// <summary>
-        /// Tìm và giữ tài xế. Tránh race condition bằng TryReserveDriver.
-        /// Có giới hạn retry để tránh CPU spike.
+        /// Tìm danh sách tài xế khả dụng, loại trừ những tài xế đã bị từ chối.
         /// </summary>
-        public async Task<Driver?> FindAndReserveDriver(
-            GeoLocation pickup,
-            string VehicleType,
-            IEnumerable<Guid>? excludedDriverIds = null,
-            int retryCount = 0)
+        public async Task<List<Driver>> FindAvailableDrivers(
+    GeoLocation pickup,
+    VehicleType vehicleType,
+    IEnumerable<Guid>? excludedDriverIds = null)
         {
             if (pickup == null) throw new ArgumentNullException(nameof(pickup));
-            if (retryCount >= MaxRetryAttempts)
-            {
-                Debug.WriteLine($"[FindAndReserve] Max retries ({MaxRetryAttempts}) reached.");
-                return null;
-            }
-
             var excluded = excludedDriverIds != null
                 ? new HashSet<Guid>(excludedDriverIds)
                 : new HashSet<Guid>();
 
             await RefreshCacheIfSupported();
 
-            var reserved = await _userRepo.TryReserveDriver(VehicleType);
-            if (reserved == null)
-            {
-                Debug.WriteLine("[FindAndReserve] No Active drivers.");
-                return null;
-            }
-
-            if (excluded.Contains(reserved.Id))
-            {
-                Debug.WriteLine($"[FindAndReserve] Reserved driver {reserved.Name} is excluded — releasing and retrying.");
-
-                // Release back to Active
-                reserved.SetActive();
-                await _userRepo.Update(reserved);
-
-                // Small delay to reduce CPU spike during retry (exponential backoff)
-                if (retryCount < MaxRetryAttempts - 1)
-                {
-                    await Task.Delay(50 * (retryCount + 1)); // 50ms, 100ms, 150ms...
-                }
-
-                // Retry with this driver added to excluded to prevent infinite loop
-                var newExcluded = new HashSet<Guid>(excluded) { reserved.Id };
-                return await FindAndReserveDriver(pickup, VehicleType, newExcluded, retryCount + 1);
-            }
-
-            Debug.WriteLine($"[FindAndReserve] Reserved driver: {reserved.Name}");
-            return reserved;
+            var allDrivers = await _driverRepo.GetActiveDrivers(vehicleType);
+            var available = allDrivers
+        .Where(d => !excluded.Contains(d.Id))
+        .ToList();
+            Debug.WriteLine($"[Tìm tài xế khả dụng] Tìm thấy {available.Count} tài xế hoạt động.");
+    return available;
         }
 
-        // ── Match (used by auto-matching flow) ────────────────────────────────
+        // Ghép cặp (sử dụng cho luồng tự động tìm tài xế).
 
         public async Task<Driver?> MatchDriver(Trip trip)
         {
@@ -125,19 +95,21 @@ namespace OOP.Application.Services
 
             driver.SetOnTrip();
             trip.AssignDriver(driver);
+            await _tripRepo.Update(trip);
+            await _userRepo.Update(driver);
             return driver;
         }
 
-        // ── Nearby drivers (for passenger map display) ────────────────────────
+        // Tài xế lân cận (dùng để hiển thị trên bản đồ của hành khách).
 
         public async Task<List<Driver>> GetNearbyDrivers(
-            GeoLocation pickup, string VehicleType, double maxKm)
+            GeoLocation pickup, VehicleType VehicleType, double maxKm)
         {
             if (pickup == null) throw new ArgumentNullException(nameof(pickup));
             if (maxKm <= 0) throw new ArgumentException("Bán kính phải lớn hơn 0.", nameof(maxKm));
 
-            var allDrivers = await _userRepo.GetActiveDrivers(VehicleType);
-            var candidates = DriverMatchingPolicy
+            var allDrivers = await _driverRepo.GetActiveDrivers(VehicleType);
+            var candidates = MatchingPolicies.DriverMatchingPolicy
                 .FilterEligibleCandidates(allDrivers.OfType<Driver>(), VehicleType)
                 .ToList();
 
@@ -159,8 +131,57 @@ namespace OOP.Application.Services
 
         private async Task RefreshCacheIfSupported()
         {
-            if (_userRepo is ICacheRefreshable cr)
+            if (_driverRepo is ICacheRefreshable cr)
                 await cr.RefreshCacheAsync();
+        }
+
+        /// <summary>
+        /// Gửi request tuần tự cho tài xế gần nhất.
+        /// Flow: Lấy tất cả tài xế có loại xe phù hợp →
+        ///       DriverMatchingPolicy loại bỏ người không đủ điều kiện (busy, locked, rejected) →
+        ///       Task.WhenAll tính khoảng cách song song →
+        ///       OrderBy khoảng cách →
+        ///       Trả về tài xế gần nhất để caller gửi thông báo.
+        /// </summary>
+        public async Task<Driver?> DispatchToNearestDriver(Trip trip)
+        {
+            if (trip == null) throw new ArgumentNullException(nameof(trip));
+
+            await RefreshCacheIfSupported();
+
+            // 1. Lấy tất cả tài xế có loại xe phù hợp
+            var allDrivers = await _driverRepo.GetActiveDrivers(trip.VehicleType);
+
+            // 2. DriverMatchingPolicy: loại bỏ busy, locked, rejected
+            var candidates = MatchingPolicies.DriverMatchingPolicy
+                .FilterEligibleCandidates(allDrivers.OfType<Driver>(), trip.VehicleType, trip.RejectedDriverIds)
+                .ToList();
+
+            Debug.WriteLine($"[DispatchToNearest] {candidates.Count} ứng viên cho Trip {trip.Id.ToString()[..8]}");
+
+            if (!candidates.Any()) return null;
+
+            // 3. Task.WhenAll tính khoảng cách song song (tăng tốc độ)
+            var tasks = candidates.Select(async d => new
+            {
+                Driver = d,
+                Distance = await _routeService.CalculateDistanceAsync(d.Position, trip.Pickup)
+            });
+
+            var results = await Task.WhenAll(tasks);
+
+            // 4. Sắp xếp: chọn người ở gần nhất
+            // 5. Trả về tài xế đầu tiên (caller sẽ gửi notification lần lượt)
+            var nearest = results
+                .OrderBy(r => r.Distance)
+                .FirstOrDefault();
+
+            if (nearest != null)
+            {
+                Debug.WriteLine($"[DispatchToNearest] Tài xế gần nhất: {nearest.Driver.Name} ({nearest.Distance:F2} km)");
+            }
+
+            return nearest?.Driver;
         }
     }
 }

@@ -6,7 +6,7 @@ namespace OOP.Infrastructure.Repositories
 {
     // Thread-Safe User Repository - giải quyết vấn đề concurrency
     // Uses single lock for all operations (both reads and writes)
-    public class ThreadSafeUserRepository : IUserRepository, ICacheRefreshable
+    public class ThreadSafeUserRepository : IUserRepository, IDriverRepository, ICacheRefreshable
     {
         private readonly IUserRepository _innerRepository;
         private readonly SemaphoreSlim _lock = new(1, 1);
@@ -68,12 +68,12 @@ namespace OOP.Infrastructure.Repositories
             }
         }
 
-        public async Task<List<Driver>> GetActiveDrivers(string VehicleType)
+        public async Task<List<Driver>> GetActiveDrivers(VehicleType VehicleType)
         {
             await _lock.WaitAsync();
             try
             {
-                return await _innerRepository.GetActiveDrivers(VehicleType);
+                return await ((IDriverRepository)_innerRepository).GetActiveDrivers(VehicleType);
             }
             finally
             {
@@ -81,12 +81,12 @@ namespace OOP.Infrastructure.Repositories
             }
         }
 
-        public async Task<Driver?> TryReserveDriver(string VehicleType)
+        public async Task<Driver?> TryReserveDriver(VehicleType VehicleType)
         {
             await _lock.WaitAsync();
             try
             {
-                return await _innerRepository.TryReserveDriver(VehicleType);
+                return await ((IDriverRepository)_innerRepository).TryReserveDriver(VehicleType);
             }
             finally
             {
@@ -145,7 +145,7 @@ namespace OOP.Infrastructure.Repositories
             await _lock.WaitAsync();
             try
             {
-                await _innerRepository.UpdateDriverLocation(driverId, location);
+                await ((IDriverRepository)_innerRepository).UpdateDriverLocation(driverId, location);
             }
             finally
             {

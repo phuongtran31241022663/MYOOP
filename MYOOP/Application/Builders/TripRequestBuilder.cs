@@ -1,10 +1,11 @@
-using OOP.Domain.Entities;
+﻿using OOP.Domain.Entities;
+using OOP.Domain.Enums;
 
 namespace OOP.Application.Builders
 {
     /// <summary>
-    /// Builder Pattern - Xây dựng TripRequest step-by-step.
-    /// Tránh constructor nhiều tham số, dễ validate từng bước.
+    /// Builder Pattern - build TripRequest step-by-step.
+    /// Avoids a large constructor and validates along the way.
     /// </summary>
     public class TripRequestBuilder
     {
@@ -12,17 +13,17 @@ namespace OOP.Application.Builders
         private Guid? _fareRuleId;
         private GeoLocation? _Pickup;
         private GeoLocation? _Destination;
-        private string? _VehicleType;
+        private VehicleType? _VehicleType;
         private double _distance;
         private decimal _fare;
         private string? _passengerName;
         private string? _passengerPhone;
         private Route? _route;
 
-        // ─── Fluent Setters ─────────────────────────────────────────────────
+        // Fluent setters
 
         /// <summary>
-        /// Set thông tin hành khách
+        /// Set passenger info.
         /// </summary>
         public TripRequestBuilder SetPassenger(Guid passengerId, string? name = null, string? phone = null)
         {
@@ -33,7 +34,7 @@ namespace OOP.Application.Builders
         }
 
         /// <summary>
-        /// Set fare rule ID
+        /// Set fare rule ID.
         /// </summary>
         public TripRequestBuilder SetFareRule(Guid fareRuleId)
         {
@@ -42,7 +43,7 @@ namespace OOP.Application.Builders
         }
 
         /// <summary>
-        /// Set điểm đón
+        /// Set pickup location.
         /// </summary>
         public TripRequestBuilder SetPickup(GeoLocation location)
         {
@@ -51,7 +52,7 @@ namespace OOP.Application.Builders
         }
 
         /// <summary>
-        /// Set điểm đến
+        /// Set destination.
         /// </summary>
         public TripRequestBuilder SetDestination(GeoLocation location)
         {
@@ -60,7 +61,7 @@ namespace OOP.Application.Builders
         }
 
         /// <summary>
-        /// Set route (lộ trình chi tiết)
+        /// Set route details.
         /// </summary>
         public TripRequestBuilder SetRoute(Route route)
         {
@@ -69,16 +70,16 @@ namespace OOP.Application.Builders
         }
 
         /// <summary>
-        /// Set loại xe
+        /// Set vehicle type.
         /// </summary>
-        public TripRequestBuilder SetVehicleType(string VehicleType)
+        public TripRequestBuilder SetVehicleType(VehicleType VehicleType)
         {
             _VehicleType = VehicleType;
             return this;
         }
 
         /// <summary>
-        /// Set khoảng cách
+        /// Set distance.
         /// </summary>
         public TripRequestBuilder SetDistance(double distance)
         {
@@ -87,7 +88,7 @@ namespace OOP.Application.Builders
         }
 
         /// <summary>
-        /// Set giá tiền (fare) cho chuyến đi
+        /// Set fare.
         /// </summary>
         public TripRequestBuilder SetFare(decimal fare)
         {
@@ -96,7 +97,7 @@ namespace OOP.Application.Builders
         }
 
         /// <summary>
-        /// Tự động tính khoảng cách từ route
+        /// Auto-calculate distance from route.
         /// </summary>
         public TripRequestBuilder CalculateDistanceFromRoute()
         {
@@ -107,40 +108,39 @@ namespace OOP.Application.Builders
             return this;
         }
 
-        // ─── Build Methods ─────────────────────────────────────────────────
+        // Build Methods
 
         /// <summary>
-        /// Validate tất cả thông tin trước khi build
+        /// Validate required info before build.
         /// </summary>
         public TripRequestBuilder Validate()
         {
             if (!_passengerId.HasValue)
-                throw new InvalidOperationException("Thiếu thông tin hành khách (PassengerId).");
+                throw new InvalidOperationException("Missing PassengerId.");
 
             if (!_fareRuleId.HasValue)
-                throw new InvalidOperationException("Thiếu FareRuleId.");
+                throw new InvalidOperationException("Missing FareRuleId.");
 
             if (_Pickup == null)
-                throw new InvalidOperationException("Thiếu điểm đón (Pickup).");
+                throw new InvalidOperationException("Missing Pickup.");
 
             if (_Destination == null)
-                throw new InvalidOperationException("Thiếu điểm đến (Destination).");
+                throw new InvalidOperationException("Missing Destination.");
 
-            if (string.IsNullOrWhiteSpace(_VehicleType))
-                throw new InvalidOperationException("Thiếu loại xe (VehicleType).");
+            if (!_VehicleType.HasValue)
+                throw new InvalidOperationException("Missing VehicleType.");
 
             if (_distance <= 0)
-                throw new InvalidOperationException("Khoảng cách không hợp lệ.");
+                throw new InvalidOperationException("Invalid distance.");
 
-            // Validate pickup != destination
             if (GeoLocation.IsSameLocation(_Pickup, _Destination))
-                throw new InvalidOperationException("Điểm đón và điểm đến không được trùng nhau.");
+                throw new InvalidOperationException("Pickup and destination must be different.");
 
             return this;
         }
 
         /// <summary>
-        /// Build Trip entity
+        /// Build Trip entity.
         /// </summary>
         public Trip Build()
         {
@@ -151,22 +151,16 @@ namespace OOP.Application.Builders
                 _fareRuleId!.Value,
                 _Pickup!,
                 _Destination!,
-                _VehicleType!,
+                _VehicleType!.Value,
                 _distance,
                 _fare
             );
-
-            // Attach route nếu có (sử dụng ApplyDistance thay vì SetRoute)
-            if (_route != null && _route.Distance > 0)
-            {
-                trip.ApplyDistance(_route.Distance);
-            }
 
             return trip;
         }
 
         /// <summary>
-        /// Build TripRequest DTO (nếu cần)
+        /// Build TripRequest DTO.
         /// </summary>
         public TripRequestData BuildRequestData()
         {
@@ -180,14 +174,14 @@ namespace OOP.Application.Builders
                 FareRuleId = _fareRuleId!.Value,
                 Pickup = _Pickup!,
                 Destination = _Destination!,
-                VehicleType = _VehicleType!,
+                VehicleType = _VehicleType!.Value,
                 Distance = _distance,
                 Route = _route
             };
         }
 
         /// <summary>
-        /// Reset builder về trạng thái ban đầu
+        /// Reset builder to initial state.
         /// </summary>
         public TripRequestBuilder Reset()
         {
@@ -205,7 +199,7 @@ namespace OOP.Application.Builders
     }
 
     /// <summary>
-    /// DTO chứa thông tin trip request - có thể serialize/deserialize
+    /// DTO for trip request data.
     /// </summary>
     public class TripRequestData
     {
@@ -215,13 +209,13 @@ namespace OOP.Application.Builders
         public Guid FareRuleId { get; set; }
         public GeoLocation Pickup { get; set; } = null!;
         public GeoLocation Destination { get; set; } = null!;
-        public string VehicleType { get; set; } = string.Empty;
+        public VehicleType VehicleType { get; set; }
         public double Distance { get; set; }
         public Route? Route { get; set; }
     }
 
     /// <summary>
-    /// Director - Điều phối các bước tạo trip theo template có sẵn
+    /// Director - coordinates trip creation with templates.
     /// </summary>
     public class TripRequestDirector
     {
@@ -233,7 +227,7 @@ namespace OOP.Application.Builders
         }
 
         /// <summary>
-        /// Tạo trip request từ dữ liệu có sẵn
+        /// Build trip from request data.
         /// </summary>
         public Trip BuildFromData(TripRequestData data)
         {
@@ -249,12 +243,12 @@ namespace OOP.Application.Builders
         }
 
         /// <summary>
-        /// Tạo trip request đơn giản (chỉ cần passenger + locations)
+        /// Build simple trip (passenger + locations only).
         /// </summary>
-        public Trip BuildSimpleTrip(Guid passengerId, GeoLocation pickup, GeoLocation destination, 
-            Guid fareRuleId, string vehicleType)
+        public Trip BuildSimpleTrip(Guid passengerId, GeoLocation pickup, GeoLocation destination,
+            Guid fareRuleId, VehicleType vehicleType)
         {
-            // Tính khoảng cách đơn giản (Haversine formula)
+            // Simple distance calculation (Haversine)
             double distance = CalculateHaversineDistance(pickup, destination);
 
             return _builder
@@ -268,7 +262,7 @@ namespace OOP.Application.Builders
         }
 
         /// <summary>
-        /// Tính khoảng cách giữa 2 điểm theo Haversine formula
+        /// Calculate distance using Haversine formula.
         /// </summary>
         private static double CalculateHaversineDistance(GeoLocation from, GeoLocation to)
         {

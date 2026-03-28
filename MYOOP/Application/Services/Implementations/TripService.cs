@@ -26,6 +26,10 @@ namespace OOP.Application.Services
         private readonly IRouteService _routeService;
         private readonly IEventDispatcher _eventDispatcher;
 
+        // Race condition: serialize driver assignment to prevent
+        // two drivers from accepting the same trip simultaneously.
+        private readonly SemaphoreSlim _assignLock = new(1, 1);
+
         public TripService(
             ITripRepository tripRepo,
             IUserRepository userRepo,
@@ -54,7 +58,7 @@ namespace OOP.Application.Services
             Guid passengerId,
             GeoLocation pickup,
             GeoLocation destination,
-            string VehicleType)
+            VehicleType VehicleType)
         {
             var route = await _routeService.GetFullRouteAsync(pickup, destination);
             double distance = route?.Distance ?? 0;
@@ -70,7 +74,6 @@ namespace OOP.Application.Services
             var rule = await _fareRuleRepo.GetByVehicleType(VehicleType)
                 ?? throw new InvalidOperationException($"Không tìm thấy bảng giá cho loại xe '{VehicleType}'.");
 
-            // Sử dụng Builder Pattern thay vì constructor trực tiếp
             var fare = rule.CalculateFare(distance);
             var tripBuilder = new TripRequestBuilder();
             var trip = tripBuilder
@@ -82,18 +85,10 @@ namespace OOP.Application.Services
                 .SetDistance(distance)
                 .SetFare(fare)
                 .Build();
-            
-            // Log trip creation
-            Logger.Instance.Info($"Trip created: {trip.Id} - Passenger: {passengerId}, Distance: {distance:F2}km, Fare: {fare:N0} VNĐ");
-
-            // KHÔNG tự động tìm và gán driver - để driver tự nhận cuốc thủ công
-            // Trip sẽ ở trạng thái Searching và driver sẽ tự thấy trong danh sách
 
             // Lưu trip vào repository
             await _tripRepo.Add(trip);
-            Logger.Instance.Info($"Trip created: {trip.Id} - Passenger: {passengerId}, Distance: {distance:F2}km");
 
-            // Dispatch domain events to handlers
             var events = trip.DomainEvents.ToList();
             trip.ClearDomainEvents();
             foreach (var evt in events)
@@ -105,6 +100,17 @@ namespace OOP.Application.Services
             string message = $"Đặt xe thành công! Đang chờ tài xế nhận cuốc... Quãng đường: {distance:N2} km. Cước ước tính: {fare:N0} VNĐ.";
             await _notificationService.NotifyPassenger(passengerId, message);
 
+            // Giai đoạn tìm tài xế (Sequential Dispatch):
+            // 1. Lấy tất cả tài xế có loại xe phù hợp
+            // 2. DriverMatchingPolicy loại bỏ người không đủ điều kiện (busy, locked, rejected)
+            // 3. Task.WhenAll tính khoảng cách song song
+            // 4. Sắp xếp theo khoảng cách (gần nhất)
+            // 5. Gửi request lần lượt cho tài xế gần nhất
+            await NotifyNearestDriver(trip);
+
+            // Log trip creation
+            Logger.Instance.Info($"Chuyến đi được tạo: {trip.Id} - Mã hành khách: {passengerId}, Khoảng cách: {distance:F2}km, Giá: {fare:N0} VNĐ");
+
             return trip;
         }
 
@@ -112,51 +118,66 @@ namespace OOP.Application.Services
 
         /// <summary>
         /// Gán tài xế cho chuyến đi.
+        /// Sử dụng SemaphoreSlim để ngăn race condition:
+        /// Hai tài xế cùng nhấn "Accept" một chuyến tại cùng một thời điểm.
+        /// Tài xế thứ hai sẽ nhận được thông báo "Chuyến đi đã có người nhận".
         /// </summary>
         /// <returns>true nếu gán thành công, false nếu chuyến đã có tài xế khác nhận</returns>
         /// <exception cref="InvalidOperationException">Ném khi tài xế không hợp lệ</exception>
         public async Task<bool> TryAssignDriver(Guid tripId, Guid driverId)
         {
-            var trip = await GetTripOrThrow(tripId);
-            var driver = await GetDriverOrThrow(driverId);
-
-            // Kiểm tra nếu trip đã có tài xế khác nhận
-            if (trip.Status == TripStatus.Matched && trip.DriverId.HasValue && trip.DriverId.Value != driverId)
+            await _assignLock.WaitAsync();
+            try
             {
-                // Tài xế khác đã nhận rồi
-                return false;
+                var trip = await GetTripOrThrow(tripId);
+                var driver = await GetDriverOrThrow(driverId);
+
+                // Nếu Trip.DriverId đã khác null → chuyến đi đã có người nhận
+                if (trip.DriverId.HasValue && trip.DriverId.Value != driverId)
+                {
+                    Debug.WriteLine($"[RaceCondition] Driver {driverId} bị từ chối: Trip {tripId} đã có tài xế {trip.DriverId}.");
+                    return false;
+                }
+
+                if (trip.Status == TripStatus.Matched && trip.DriverId.HasValue && trip.DriverId.Value != driverId)
+                    return false;
+
+                if (trip.Status != TripStatus.Searching && trip.Status != TripStatus.Requested)
+                    throw new InvalidOperationException("Chuyến đi không ở trạng thái có thể gán tài xế.");
+
+                if (driver.Status != DriverStatus.Available)
+                    throw new InvalidOperationException(
+                        $"Tài xế hiện không sẵn sàng nhận chuyến (trạng thái: '{driver.Status}').");
+
+                driver.SetOnTrip();
+                trip.AssignDriver(driver);
+
+                await _tripRepo.Update(trip);
+                await _userRepo.Update(driver);
+
+                // Dispatch domain events
+                var events = trip.DomainEvents.ToList();
+                trip.ClearDomainEvents();
+                foreach (var evt in events)
+                {
+                    await _eventDispatcher.DispatchAsync(evt);
+                }
+
+                await _notificationService.NotifyTripUpdate(tripId, $"Tài xế {driver.Name} đã nhận chuyến.");
+                await _notificationService.NotifyDriver(driverId, "Bạn đã nhận chuyến thành công!");
+
+                return true;
             }
-
-            if (trip.Status != TripStatus.Searching && trip.Status != TripStatus.Requested)
-                throw new InvalidOperationException("Chuyến đi không ở trạng thái có thể gán tài xế.");
-
-            if (driver.Status != DriverStatus.Active)
-                throw new InvalidOperationException(
-                    $"Tài xế hiện không sẵn sàng nhận chuyến (trạng thái: '{driver.Status}').");
-
-            driver.SetOnTrip();
-            trip.AssignDriver(driver);
-
-            await _tripRepo.Update(trip);
-            await _userRepo.Update(driver);
-
-            // Dispatch domain events
-            var events = trip.DomainEvents.ToList();
-            trip.ClearDomainEvents();
-            foreach (var evt in events)
+            finally
             {
-                await _eventDispatcher.DispatchAsync(evt);
+                _assignLock.Release();
             }
-
-            await _notificationService.NotifyTripUpdate(tripId, $"Tài xế {driver.Name} đã nhận chuyến.");
-            
-            return true;
         }
 
         /// <summary>
         /// Gán tài xế (phiên bản cũ - giữ để tương thích)
         /// </summary>
-        [Obsolete("Use TryAssignDriver instead")]
+        [Obsolete("Sử dụng TryAssignDriver thay thế")]
         public async Task AssignDriver(Guid tripId, Guid driverId)
         {
             var result = await TryAssignDriver(tripId, driverId);
@@ -184,13 +205,8 @@ namespace OOP.Application.Services
             await _notificationService.NotifyTripUpdate(
                 tripId, $"Tài xế đã từ chối. Đang tìm tài xế khác... ({reason})");
 
-            var next = await _matchingService.FindAndReserveDriver(
-                trip.Pickup, trip.VehicleType, trip.RejectedDriverIds);
-
-            if (next != null)
-                await _notificationService.NotifyDriver(
-                    next.Id,
-                    $"Bạn có yêu cầu mới: {trip.Pickup.Address} → {trip.Destination.Address} (Ước tính {trip.Fare:N0} VNĐ)");
+            // Gửi request lần lượt: tìm tài xế gần nhất tiếp theo
+            await NotifyNearestDriver(trip);
         }
 
         // ── 4. Tài xế đến nơi đón ────────────────────────────────────────────
@@ -237,48 +253,20 @@ namespace OOP.Application.Services
         {
             var trip = await GetTripOrThrow(tripId);
             Route? route = null;
-
-            // Recalculate distance if not set
-            if (trip.Distance <= 0)
-            {
-                route = await _routeService.GetFullRouteAsync(
-                    trip.Pickup, trip.Destination);
-                if (route != null)
-                    trip.ApplyDistance(route.Distance);
-            }
-
-            double actualDurationMinutes = 0;
-
-            if (trip.StartedAt.HasValue)
-            {
-                actualDurationMinutes = (DateTime.UtcNow - trip.StartedAt.Value).TotalMinutes;
-            }
-
-            if (actualDurationMinutes <= 0)
-            {
-                route ??= await _routeService.GetFullRouteAsync(trip.Pickup, trip.Destination);
-                if (route != null && route.Duration > 0)
-                    actualDurationMinutes = route.Duration;
-            }
-
-            if (actualDurationMinutes <= 0)
-            {
-                actualDurationMinutes = trip.Duration > 0 ? trip.Duration : 0.1;
-            }
-
-            trip.CompleteTrip(trip.Distance, actualDurationMinutes, trip.Fare);
-
-            // Reset driver status immediately to avoid inconsistent state
-            if (trip.DriverId.HasValue)
-            {
-                var driver = await GetDriverOrThrow(trip.DriverId.Value);
-                driver.SetActive();
-                await _userRepo.Update(driver);
-            }
+            double speedKmH = new Random().Next(30, 50);
+            double assumedDuration = (trip.Distance / speedKmH) * 60;
+            trip.CompleteTrip(trip.Distance, assumedDuration, trip.Fare);
 
             await _tripRepo.Update(trip);
 
-            // Dispatch domain events
+            if (trip.DriverId.HasValue)
+            {
+                var driver = await GetDriverOrThrow(trip.DriverId.Value);
+                driver.ForceSetAvailable();
+                await _userRepo.Update(driver);
+            }
+
+            // Bắn Event và Thông báo
             var events = trip.DomainEvents.ToList();
             trip.ClearDomainEvents();
             foreach (var evt in events)
@@ -297,43 +285,33 @@ namespace OOP.Application.Services
         {
             var trip = await GetTripOrThrow(tripId);
 
-            // Trip is already Completed, just process the payment
             if (trip.Status != TripStatus.Completed)
                 throw new InvalidOperationException("Chỉ có thể xác nhận thanh toán khi chuyến đã hoàn thành.");
-            
-            // Update fare if different (for cash payment adjustment)
-            if (actualFare > 0 && actualFare != trip.Fare)
-            {
-                trip.ApplyFare(actualFare);
-            }
-            
-            await _tripRepo.Update(trip);
-
-            // Dispatch domain events
-            var events = trip.DomainEvents.ToList();
-            trip.ClearDomainEvents();
-            foreach (var evt in events)
-            {
-                await _eventDispatcher.DispatchAsync(evt);
-            }
-
+            if (actualFare <= 0)
+                throw new ArgumentException("Cước thực tế không hợp lệ.", nameof(actualFare));
+            if (actualFare != trip.Fare)
+                throw new InvalidOperationException("Cước thực tế không khớp với cước đã chốt. Không thể cập nhật sau khi trip đã Completed.");
             var payment = await _paymentService.CreatePayment(trip);
             await _paymentService.ProcessPayment(payment.Id);
-
             if (trip.DriverId.HasValue)
             {
                 var driver = await GetDriverOrThrow(trip.DriverId.Value);
                 driver.PayCommission(trip.Fare, payment.CommissionRate);
                 driver.AddTrip();
-                // driver.SetActive() đã được gọi trong CompleteTrip() rồi
                 await _userRepo.Update(driver);
             }
-
             var passengerUser = await _userRepo.GetById(trip.PassengerId);
             if (passengerUser is Passenger p)
             {
                 p.AddTrip();
                 await _userRepo.Update(p);
+            }
+
+            var events = trip.DomainEvents.ToList();
+            trip.ClearDomainEvents();
+            foreach (var evt in events)
+            {
+                await _eventDispatcher.DispatchAsync(evt);
             }
 
             await _notificationService.NotifyTripUpdate(
@@ -351,7 +329,7 @@ namespace OOP.Application.Services
             if (trip.DriverId.HasValue)
             {
                 var driver = await GetDriverOrThrow(trip.DriverId.Value);
-                driver.SetActive();
+                driver.ForceSetAvailable();
                 await _userRepo.Update(driver);
             }
 
@@ -392,20 +370,20 @@ namespace OOP.Application.Services
             var driver = await GetDriverOrThrow(driverId);
             Debug.WriteLine($"[GetActiveTrips] Driver {driverId}: Status={driver.Status}, Vehicle={driver.Vehicle?.GetVehicleType()}");
 
-            if (driver.Status != DriverStatus.Active)
+            if (driver.Status != DriverStatus.Available)
             {
                 Debug.WriteLine("[GetActiveTrips] Driver not Active, returning empty list");
                 return new List<Trip>();
             }
 
             var trips = await _tripRepo.GetAll();
-            var Active = TripMatchingPolicy.FilterActiveTripsForDriver(trips, driver).ToList();
+            var Active = MatchingPolicies.TripMatchingPolicy.FilterActiveTripsForDriver(trips, driver).ToList();
 
             Debug.WriteLine($"[GetActiveTrips] Found {Active.Count} trips for driver {driver.Name}");
             return Active;
         }
 
-        public async Task<List<Driver>> GetNearbyDrivers(GeoLocation pickup, string VehicleType, double maxKm) =>
+        public async Task<List<Driver>> GetNearbyDrivers(GeoLocation pickup, VehicleType VehicleType, double maxKm) =>
             await _matchingService.GetNearbyDrivers(pickup, VehicleType, maxKm);
 
         public async Task<Driver?> GetDriverForTrip(Guid tripId)
@@ -416,28 +394,6 @@ namespace OOP.Application.Services
         }
 
         // ── 9. Driver status / location (called from DriverDashboardForm) ────
-        public async Task UpdateDriverStatus(Guid driverId, DriverStatus status)
-        {
-            var driver = await GetDriverOrThrow(driverId);
-
-            switch (status)
-            {
-                case DriverStatus.Active:
-                    driver.SetActive();
-                    break;
-                case DriverStatus.OnTrip:
-                    driver.SetOnTrip();
-                    break;
-                case DriverStatus.Inactive:
-                    driver.SetInactive();       
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(status), $"Trạng thái '{status}' không hợp lệ.");
-            }
-
-            await _userRepo.Update(driver);
-        }
-
         public async Task UpdateDriverLocation(Guid driverId, GeoLocation location)
         {
             if (location == null) throw new ArgumentNullException(nameof(location));
@@ -470,7 +426,10 @@ namespace OOP.Application.Services
                     await _tripRepo.Update(t);
                     await _notificationService.NotifyTripUpdate(t.Id, "Không có tài xế nhận. Yêu cầu đã hết thời gian.");
                 }
-                catch { /* ignore per-trip errors */ }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[ExpireSearchingTrips] Trip {t.Id}: {ex.GetType().Name}: {ex.Message}");
+                }
             }
 
             return expired.Count;
@@ -497,20 +456,17 @@ namespace OOP.Application.Services
                 {
                     var driverId = t.DriverId!.Value;
                     t.AddRejectedDriver(driverId);
-                    // Driver didn't respond - try to find another driver
+                    t.MarkSearching();
                     await _tripRepo.Update(t);
 
                     var driver = await GetDriverOrThrow(driverId);
-                    driver.SetActive();
+                    driver.ForceSetAvailable();
                     await _userRepo.Update(driver);
 
                     await _notificationService.NotifyTripUpdate(t.Id, "Tài xế không phản hồi. Đang tìm tài xế khác...");
 
-                    var next = await _matchingService.FindAndReserveDriver(
-                        t.Pickup, t.VehicleType, t.RejectedDriverIds);
-
-                    if (next != null)
-                        await AssignDriver(t.Id, next.Id);
+                    // Tuần tự: gửi request cho tài xế gần nhất tiếp theo
+                    await NotifyNearestDriver(t);
                 }
                 catch { /* ignore per-trip errors */ }
             }
@@ -530,6 +486,29 @@ namespace OOP.Application.Services
                 ?? throw new KeyNotFoundException($"Không tìm thấy driver '{driverId}'.");
             return user as Driver
                 ?? throw new InvalidOperationException($"User '{driverId}' không phải Driver.");
+        }
+
+        /// <summary>
+        /// Gửi request cho tài xế gần nhất (tuần tự).
+        /// Flow: DispatchToNearestDriver → gửi thông báo cho tài xế.
+        /// Nếu không còn tài xế khả dụng → thông báo cho hành khách.
+        /// </summary>
+        private async Task NotifyNearestDriver(Trip trip)
+        {
+            var nearest = await _matchingService.DispatchToNearestDriver(trip);
+            if (nearest != null)
+            {
+                await _notificationService.NotifyDriver(
+                    nearest.Id,
+                    $"Bạn có yêu cầu mới: {trip.Pickup.Name} → {trip.Destination.Name} (Ước tính {trip.Fare:N0} VNĐ)");
+                Debug.WriteLine($"[SequentialDispatch] Đã thông báo tài xế {nearest.Name} cho Trip {trip.Id.ToString()[..8]}");
+            }
+            else
+            {
+                await _notificationService.NotifyTripUpdate(
+                    trip.Id, "Đang tìm tài xế... Không còn tài xế gần bạn. Vui lòng chờ.");
+                Debug.WriteLine($"[SequentialDispatch] Không còn tài xế cho Trip {trip.Id.ToString()[..8]}");
+            }
         }
     }
 }

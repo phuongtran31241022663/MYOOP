@@ -1,13 +1,14 @@
-﻿using GMap.NET;
+using GMap.NET;
 using GMap.NET.MapProviders;
 using GMap.NET.WindowsForms;
 using GMap.NET.WindowsForms.Markers;
 using Newtonsoft.Json.Linq;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
+using OOP.Domain.Enums;
 using DomainLocation = OOP.Domain.Entities.GeoLocation;
 
-namespace MYOOP.Presentation.Common.MapComponent
+namespace OOP.Presentation.Common.MapComponent
 {
     public class MapControl : UserControl
     {
@@ -43,6 +44,8 @@ namespace MYOOP.Presentation.Common.MapComponent
         // ── Drag detection ────────────────────────────────────────────────────
         private bool _isDragging;
         private Point _mouseDownPos;
+        private bool _isRightDragging;
+        private Point _rightMouseDownPos;
 
         // ── Dependencies ──────────────────────────────────────────────────────
         private readonly HttpClient _http;
@@ -132,17 +135,33 @@ namespace MYOOP.Presentation.Common.MapComponent
         // ── Mouse ─────────────────────────────────────────────────────────────
         private void OnMapMouseDown(object? s, MouseEventArgs e)
         {
-            if (e.Button != MouseButtons.Left) return;
-            _isDragging = false;
-            _mouseDownPos = new Point(e.X, e.Y);
+            if (e.Button == MouseButtons.Left)
+            {
+                if (e.Button != MouseButtons.Left) return;
+                _isDragging = false;
+                _mouseDownPos = new Point(e.X, e.Y);
+            }
+            else if (e.Button == MouseButtons.Right)
+            {
+                _isRightDragging = false;
+                _rightMouseDownPos = new Point(e.X, e.Y);
+            }
         }
 
         private void OnMapMouseMove(object? s, MouseEventArgs e)
         {
-            if (e.Button != MouseButtons.Left) return;
-            if (Math.Abs(e.X - _mouseDownPos.X) > 5 ||
-                Math.Abs(e.Y - _mouseDownPos.Y) > 5)
-                _isDragging = true;
+            if (e.Button == MouseButtons.Left)
+            {
+                if (Math.Abs(e.X - _mouseDownPos.X) > 5 ||
+                    Math.Abs(e.Y - _mouseDownPos.Y) > 5)
+                    _isDragging = true;
+            }
+            else if (e.Button == MouseButtons.Right)
+            {
+                if (Math.Abs(e.X - _rightMouseDownPos.X) > 5 ||
+                    Math.Abs(e.Y - _rightMouseDownPos.Y) > 5)
+                    _isRightDragging = true;
+            }
         }
 
         private void OnMapMouseUp(object? s, MouseEventArgs e)
@@ -158,7 +177,10 @@ namespace MYOOP.Presentation.Common.MapComponent
 
             if (e.Button == MouseButtons.Right)
             {
-                _ = HandleClickAsync(e.X, e.Y);
+                bool wasRightDrag = _isRightDragging;
+                _isRightDragging = false;
+                if (!wasRightDrag)
+                    _ = HandleClickAsync(e.X, e.Y);
             }
         }
 
@@ -292,6 +314,7 @@ namespace MYOOP.Presentation.Common.MapComponent
             { ToolTipText = "Điểm đón" };
             pickupOverlay.Markers.Add(_pickupMarker);
             _pickupPoint = point;
+            poiOverlay.IsVisibile = false;
             gmap.Refresh();
         }
 
@@ -400,7 +423,8 @@ namespace MYOOP.Presentation.Common.MapComponent
             {
                 if (d.Position == null) continue;
                 string key = d.Id.ToString();
-                string tip = $"Tài xế: {d.Name}\nXe: {d.Vehicle?.GetVehicleType() ?? "N/A"}\n⭐ {d.AverageRating:F1}";
+                string vehicleType = d.Vehicle != null ? (d.Vehicle.GetVehicleType() == VehicleType.Motorbike ? "Xe máy" : "Ô tô") : "N/A";
+                string tip = $"Tài xế: {d.Name}\nXe: {vehicleType}\n⭐ {d.AverageRating:F1}";
 
                 if (!_driverMarkers.ContainsKey(key))
                 {

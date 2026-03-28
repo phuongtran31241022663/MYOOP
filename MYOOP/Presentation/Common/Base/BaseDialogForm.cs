@@ -10,11 +10,12 @@ namespace OOP.Presentation.BaseForms
     {
         protected BaseDialogForm()
         {
-            FormBorderStyle = FormBorderStyle.FixedDialog;
+            FormBorderStyle = FormBorderStyle.Sizable;
             MaximizeBox = false;
             MinimizeBox = false;
-            StartPosition = FormStartPosition.CenterParent;
-            BackColor = Color.White;
+            Size = AppTheme.DialogSize;
+            MinimumSize = AppTheme.DialogMinSize;
+            BackColor = AppTheme.PageBg;
         }
 
         // ── Optional helpers subclasses can call if they want ─────────────────

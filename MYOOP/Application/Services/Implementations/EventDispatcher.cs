@@ -66,6 +66,7 @@ namespace OOP.Application.Services.Implementations
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[EventDispatcher] Error dispatching {@event.GetType().Name}: {ex.Message}");
+                throw;
             }
         }
 
@@ -73,24 +74,20 @@ namespace OOP.Application.Services.Implementations
         {
             System.Diagnostics.Debug.WriteLine($"[EventDispatcher] Handling TripRequestedEvent for trip {@event.AggregateId}");
 
-            try
-            {
-                var bestDriver = await _matchingService.FindAndReserveDriver(
-                    @event.Pickup,
-                    @event.VehicleType,
-                    new List<Guid>());
+            var availableDrivers = await _matchingService.FindAvailableDrivers(
+                @event.Pickup,
+                @event.VehicleType,
+                new List<Guid>());
 
-                if (bestDriver != null)
-                {
-                    await _notificationService.NotifyDriver(
-                        bestDriver.Id,
-                        $"Bạn có yêu cầu mới: {@event.Pickup.Address} → {@event.Destination.Address} (Ước tính {@event.Fare:N0} VNĐ)");
-                }
-            }
-            catch (Exception ex)
+            var bestDriver = availableDrivers.FirstOrDefault();
+
+            if (bestDriver != null)
             {
-                System.Diagnostics.Debug.WriteLine($"[TripRequestedEventHandler] Error: {ex.Message}");
+                await _notificationService.NotifyDriver(
+                    bestDriver.Id,
+                    $"Bạn có yêu cầu mới: {@event.Pickup.Address} → {@event.Destination.Address} (Giá {@event.Fare:N0} VNĐ)");
             }
+
         }
 
         private async Task HandleAsync(TripSearchingEvent @event)
@@ -104,101 +101,53 @@ namespace OOP.Application.Services.Implementations
         private async Task HandleAsync(TripMatchedEvent @event)
         {
             System.Diagnostics.Debug.WriteLine($"[EventDispatcher] Handling TripMatchedEvent for trip {@event.AggregateId}");
-            
-            try
+            var driver = await _userRepo.GetById(@event.DriverId) as Driver;
+            if (driver != null)
             {
-                var driver = await _userRepo.GetById(@event.DriverId) as Driver;
-                if (driver != null)
-                {
-                    await _notificationService.NotifyPassenger(
-                        @event.AggregateId,
-                        $"Tài xế {driver.Name} đã nhận chuyến. Số điện thoại: {driver.Phone}");
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[TripMatchedEventHandler] Error: {ex.Message}");
+                await _notificationService.NotifyPassenger(
+                    @event.AggregateId,
+                    $"Tài xế {driver.Name} đã nhận chuyến. Số điện thoại: {driver.Phone}");
             }
         }
 
         private async Task HandleAsync(TripArrivedEvent @event)
         {
             System.Diagnostics.Debug.WriteLine($"[EventDispatcher] Handling TripArrivedEvent for trip {@event.AggregateId}");
-            
-            try
-            {
-                await _notificationService.NotifyTripUpdate(
-                    @event.AggregateId,
-                    "Tài xế đã đến điểm đón.");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[TripArrivedEventHandler] Error: {ex.Message}");
-            }
+            await _notificationService.NotifyTripUpdate(
+                @event.AggregateId,
+                "Tài xế đã đến điểm đón.");
         }
 
         private async Task HandleAsync(TripStartedEvent @event)
         {
             System.Diagnostics.Debug.WriteLine($"[EventDispatcher] Handling TripStartedEvent for trip {@event.AggregateId}");
-            
-            try
-            {
-                await _notificationService.NotifyTripUpdate(
-                    @event.AggregateId,
-                    "Chuyến đi đã bắt đầu.");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[TripStartedEventHandler] Error: {ex.Message}");
-            }
+            await _notificationService.NotifyTripUpdate(
+                @event.AggregateId,
+                "Chuyến đi đã bắt đầu.");
         }
 
         private async Task HandleAsync(TripCompletedEvent @event)
         {
             System.Diagnostics.Debug.WriteLine($"[EventDispatcher] Handling TripCompletedEvent for trip {@event.AggregateId}");
-            
-            try
-            {
-                await _notificationService.NotifyTripUpdate(
-                    @event.AggregateId,
-                    $"Chuyến đi hoàn thành. Cước phí: {@event.Fare:N0} VNĐ.");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[TripCompletedEventHandler] Error: {ex.Message}");
-            }
+            await _notificationService.NotifyTripUpdate(
+                @event.AggregateId,
+                $"Chuyến đi hoàn thành. Cước phí: {@event.Fare:N0} VNĐ.");
         }
 
         private async Task HandleAsync(TripCancelledEvent @event)
         {
             System.Diagnostics.Debug.WriteLine($"[EventDispatcher] Handling TripCancelledEvent for trip {@event.AggregateId}");
-            
-            try
-            {
-                await _notificationService.NotifyTripUpdate(
-                    @event.AggregateId,
-                    $"Chuyến đi đã bị hủy. Lý do: {@event.Reason}");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[TripCancelledEventHandler] Error: {ex.Message}");
-            }
+            await _notificationService.NotifyTripUpdate(
+                @event.AggregateId,
+                $"Chuyến đi đã bị hủy. Lý do: {@event.Reason}");
         }
 
         private async Task HandleAsync(TripTimeoutEvent @event)
         {
             System.Diagnostics.Debug.WriteLine($"[EventDispatcher] Handling TripTimeoutEvent for trip {@event.AggregateId}");
-            
-            try
-            {
-                await _notificationService.NotifyTripUpdate(
-                    @event.AggregateId,
-                    "Không có tài xế nhận. Yêu cầu đã hết thời gian.");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[TripTimeoutEventHandler] Error: {ex.Message}");
-            }
+            await _notificationService.NotifyTripUpdate(
+                @event.AggregateId,
+                "Không có tài xế nhận. Yêu cầu đã hết thời gian.");
         }
     }
 }

@@ -7,18 +7,8 @@ using OOP.Presentation.Common.Theme;
 
 namespace OOP.Presentation.Screens.Driver
 {
-    /// <summary>
-    /// L?ch s? chuy?n di c?a t�i x?.
-    /// Tuong t? PassengerHistoryScreen nhung th�m c?t hoa h?ng v� thu nh?p th?c.
-    /// </summary>
     public class DriverHistoryScreen : UserControl, IScreen
     {
-        // ── Constructor ───────────────────────────────────────────────────────
-        public DriverHistoryScreen()
-        {
-            DoubleBuffered = true; // Reduces flicker when repainting
-        }
-
         private readonly Guid _driverId;
         private readonly ITripService _tripService;
         private readonly IUserRepository _userRepo;
@@ -45,6 +35,7 @@ namespace OOP.Presentation.Screens.Driver
             IUserRepository userRepo,
             IFareService fareService)
         {
+            DoubleBuffered = true; // Reduces flicker when repainting
             _driverId = driverId;
             _tripService = tripService;
             _userRepo = userRepo;
@@ -66,12 +57,12 @@ namespace OOP.Presentation.Screens.Driver
             };
             var lblTitle = new Label
             {
-                Text = "L?ch s? chuy?n di",
+                Text = "Lịch sử chuyến đi",
                 Font = new Font("Segoe UI", 12f, FontStyle.Bold),
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft
             };
-            _btnRefresh = FormHelper.MakeButton("?? L�m m?i", AppTheme.Primary, AppTheme.PrimaryHover, height: 36);
+            _btnRefresh = FormHelper.MakeButton("Làm mới", AppTheme.Primary, AppTheme.PrimaryHover, height: 36);
             _btnRefresh.Width = 100;
             _btnRefresh.Dock = DockStyle.Right;
             _btnRefresh.Click += async (_, _) => await LoadTrips();
@@ -88,10 +79,10 @@ namespace OOP.Presentation.Screens.Driver
             };
             var summaryLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
             for (int i = 0; i < 3; i++) summaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.3f));
-
-            _lblTotalTrips = MakeSumLabel("T?ng chuy?n: --");
-            _lblTotalIncome = MakeSumLabel("Thu nh?p: --");
-            _lblAvgRating = MakeSumLabel("��nh gi� TB: --");
+           
+            _lblTotalTrips = MakeSumLabel("Tổng chuyến: --");
+            _lblTotalIncome = MakeSumLabel("Thu nhập: --");
+            _lblAvgRating = MakeSumLabel("Đánh giá: --");
 
             summaryLayout.Controls.Add(_lblTotalTrips, 0, 0);
             summaryLayout.Controls.Add(_lblTotalIncome, 1, 0);
@@ -114,18 +105,18 @@ namespace OOP.Presentation.Screens.Driver
                 Font = new Font("Segoe UI", 9.5f)
             };
             _dgv.Columns.AddRange(
-                MakeCol("Pickup", "�i?m d�n", 200),
-                MakeCol("Destination", "�i?m d?n", 200),
-                MakeCol("Distance", "K.C�ch", 80),
-                MakeCol("Fare", "Cu?c ph�", 100),
-                MakeCol("Net", "Thu nh?p", 100),
-                MakeCol("Status", "Tr?ng th�i", 120),
-                MakeCol("Date", "Ng�y", 110)
-            );
+    MakeCol("Pickup", "Điểm đón", 200),
+    MakeCol("Destination", "Điểm đến", 200),
+    MakeCol("Distance", "Khoảng cách", 80),
+    MakeCol("Fare", "Cước phí", 100),
+    MakeCol("Net", "Thu nhập", 100),
+    MakeCol("Status", "Trạng thái", 120),
+    MakeCol("Date", "Ngày", 110)
+);
 
             _lblEmpty = new Label
             {
-                Text = "Chua c� chuy?n di n�o.",
+                Text = "Chua có chuyến đi nào.",
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Font = new Font("Segoe UI", 11),
@@ -147,10 +138,14 @@ namespace OOP.Presentation.Screens.Driver
                 var trips = await _tripService.GetTripHistory(_driverId);
                 var completed = trips.Where(t => t.Status == TripStatus.Completed).ToList();
                 var commissionRates = await LoadCommissionRates(trips);
+                var driver = await _userRepo.GetById(_driverId) as OOP.Domain.Entities.Driver;
 
                 // Summary
                 _lblTotalTrips.Text = $"T?ng chuy?n: {trips.Count}";
                 _lblTotalIncome.Text = $"Thu nh?p: {completed.Sum(t => t.Fare * (1m - GetRate(t.VehicleType, commissionRates))):N0} d";
+                _lblAvgRating.Text = driver != null
+                    ? $"Đánh giá: {driver.AverageRating:F1}"
+                    : "Đánh giá: --";
 
                 if (trips.Count == 0) { _dgv.Visible = false; _lblEmpty.Visible = true; return; }
 
@@ -163,14 +158,14 @@ namespace OOP.Presentation.Screens.Driver
                         ? Math.Round(t.Fare * (1m - GetRate(t.VehicleType, commissionRates)), 0) : 0;
 
                     _dgv.Rows.Add(
-                        t.Pickup?.Address ?? "�",
-                        t.Destination?.Address ?? "�",
-                        $"{t.Distance:F1} km",
-                        t.Fare > 0 ? $"{t.Fare:N0} d" : "�",
-                        net > 0 ? $"{net:N0} d" : "�",
-                        StatusLabel(t.Status),
-                        t.RequestedAt.ToLocalTime().ToString("dd/MM HH:mm")
-                    );
+     t.Pickup?.Address ?? "—",
+     t.Destination?.Address ?? "—",
+     $"{t.Distance:F1} km",
+     t.Fare > 0 ? $"{t.Fare:N0} đ" : "—",
+     net > 0 ? $"{net:N0} đ" : "—",
+     StatusLabel(t.Status),
+     t.RequestedAt.ToLocalTime().ToString("dd/MM HH:mm")
+ );
 
                     _dgv.Rows[^1].DefaultCellStyle.ForeColor = t.Status switch
                     {
@@ -188,32 +183,35 @@ namespace OOP.Presentation.Screens.Driver
             finally { _btnRefresh.Enabled = true; }
         }
 
-        private async Task<Dictionary<string, decimal>> LoadCommissionRates(IEnumerable<Trip> trips)
+        private async Task<Dictionary<VehicleType, decimal>> LoadCommissionRates(IEnumerable<Trip> trips)
         {
-            var rates = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            var rates = new Dictionary<VehicleType, decimal>();
             var vehicleTypes = trips
                 .Select(t => t.VehicleType)
-                .Where(v => !string.IsNullOrWhiteSpace(v))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Distinct()
                 .ToList();
 
-            foreach (var vehicleType in vehicleTypes)
+            var tasks = vehicleTypes.Select(async vehicleType =>
             {
                 try
                 {
                     var rule = await _fareService.GetFareRule(vehicleType);
-                    rates[vehicleType] = rule?.CommissionRate ?? 0.2m;
+                    return (vehicleType, rate: rule?.CommissionRate ?? 0.2m);
                 }
                 catch
                 {
-                    rates[vehicleType] = 0.2m;
+                    return (vehicleType, rate: 0.2m);
                 }
-            }
+            });
+
+            var results = await Task.WhenAll(tasks);
+            foreach (var result in results)
+                rates[result.vehicleType] = result.rate;
 
             return rates;
         }
 
-        private static decimal GetRate(string vehicleType, Dictionary<string, decimal> rates)
+        private static decimal GetRate(VehicleType vehicleType, Dictionary<VehicleType, decimal> rates)
         {
             if (rates.TryGetValue(vehicleType, out var rate))
                 return rate;
@@ -234,10 +232,10 @@ namespace OOP.Presentation.Screens.Driver
 
         private static string StatusLabel(TripStatus s) => s switch
         {
-            TripStatus.Completed => "? Ho�n th�nh",
-            TripStatus.Cancelled => "? �� h?y",
-            TripStatus.Timeout => "? H?t TG",
-            TripStatus.Started => "?? �ang ch?y",
+            TripStatus.Completed => "? Hoàn thành",
+            TripStatus.Cancelled => "? Đã hủy",
+            TripStatus.Timeout => "? Hết thời gian",
+            TripStatus.Started => "?? Đang chạy",
             _ => s.ToString()
         };
     }

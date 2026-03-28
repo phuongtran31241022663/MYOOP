@@ -1,4 +1,5 @@
 ﻿﻿using OOP.Domain.Entities;
+using OOP.Domain.Enums;
 
 namespace OOP.Application.Services.Interfaces
 {
@@ -8,7 +9,7 @@ namespace OOP.Application.Services.Interfaces
             Guid passengerId,
             GeoLocation pickup,
             GeoLocation destination,
-            string VehicleType);
+            VehicleType VehicleType);
 
         Task<bool> TryAssignDriver(Guid tripId, Guid driverId);
         /// <summary>
@@ -29,7 +30,7 @@ namespace OOP.Application.Services.Interfaces
         Task<List<Trip>> GetTripHistory(Guid userId);
         Task<List<Trip>> GetByUserId(Guid userId);
         Task<List<Trip>> GetActiveTripsForDriver(Guid driverId);
-        Task<List<Driver>> GetNearbyDrivers(GeoLocation pickup, string VehicleType, double maxKm);
+        Task<List<Driver>> GetNearbyDrivers(GeoLocation pickup, VehicleType VehicleType, double maxKm);
         Task<Driver?> GetDriverForTrip(Guid tripId);
         Task<int> ExpireSearchingTrips(TimeSpan maxWait);
         /// <summary>

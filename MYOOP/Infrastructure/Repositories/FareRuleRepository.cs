@@ -1,4 +1,5 @@
 ﻿﻿using OOP.Domain.Entities;
+using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
 using OOP.Infrastructure.Storage;
 
@@ -46,15 +47,15 @@ namespace OOP.Infrastructure.Repositories
 
             // Motorbike: Siêu rẻ
             Items.Add(new Fare(
-                vehicleType: "Motorbike",
+                vehicleType: VehicleType.Motorbike,
                 baseFare: 10000m,      // Giá mở cửa 10k
                 pricePerKm: 5000m,     // 5k mỗi km
                 commissionRate: DefaultCommission));
 
             // Car: Rẻ nhưng cao hơn xe máy
             Items.Add(new Fare(
-                vehicleType: "Car",
-                baseFare: 15000m,     
+                vehicleType: VehicleType.Car,
+                baseFare: 15000m,
                 pricePerKm: 10000m,    // 10k mỗi km
                 commissionRate: DefaultCommission));
 
@@ -71,11 +72,10 @@ namespace OOP.Infrastructure.Repositories
             await EnsureSeeded();
             return Items.FirstOrDefault(r => r.Id == id);
         }
-        public async Task<Fare?> GetByVehicleType(string VehicleType)
+        public async Task<Fare?> GetByVehicleType(VehicleType VehicleType)
         {
             await EnsureSeeded();
-            return Items.FirstOrDefault(r => 
-                string.Equals(r.VehicleType, VehicleType, StringComparison.OrdinalIgnoreCase));
+            return Items.FirstOrDefault(r => r.VehicleType == VehicleType);
         }
 
         public async Task Add(Fare rule)

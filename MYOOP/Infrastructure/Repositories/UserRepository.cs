@@ -5,7 +5,7 @@ using OOP.Domain.Interfaces;
 
 namespace OOP.Infrastructure.Repositories
 {
-    public class UserRepository : BaseRepository<User>, IUserRepository
+    public class UserRepository : BaseRepository<User>, IUserRepository, IDriverRepository
     {
         public UserRepository(IStorage storage)
               : base(storage, "users.json") { }
@@ -36,16 +36,16 @@ namespace OOP.Infrastructure.Repositories
             return Items.Any(u => u.Phone.Trim() == trimmed);
         }
 
-        public async Task<List<Driver>> GetActiveDrivers(string VehicleType)
+        public async Task<List<Driver>> GetActiveDrivers(VehicleType VehicleType)
         {
             await EnsureLoaded();
             return Items.OfType<Driver>()
-                .Where(d => d.Status == DriverStatus.Active)
-                .Where(d => d.Vehicle != null && string.Equals(d.Vehicle.GetVehicleType(), VehicleType, StringComparison.OrdinalIgnoreCase))
+                .Where(d => d.Status == DriverStatus.Available)
+                .Where(d => d.Vehicle != null && d.Vehicle.GetVehicleType() == VehicleType)
                 .ToList();
         }
 
-        public async Task<Driver?> TryReserveDriver(string VehicleType)
+        public async Task<Driver?> TryReserveDriver(VehicleType VehicleType)
         {
             await EnsureLoaded();
             await WriteLock.WaitAsync();
@@ -54,9 +54,9 @@ namespace OOP.Infrastructure.Repositories
                 // Tìm tài xế Active đầu tiên với vehicle type phù hợp
                 var driver = Items.OfType<Driver>()
                     .FirstOrDefault(d =>
-                        d.Status == DriverStatus.Active &&
+                        d.Status == DriverStatus.Available &&
                         d.Vehicle != null &&
-                        string.Equals(d.Vehicle.GetVehicleType(), VehicleType, StringComparison.OrdinalIgnoreCase));
+                        d.Vehicle.GetVehicleType() == VehicleType);
 
                 if (driver == null)
                 {
@@ -66,7 +66,7 @@ namespace OOP.Infrastructure.Repositories
 
                 // CRITICAL: Guard check - verify driver is still Active before setting OnTrip
                 // This prevents double reservation and ensures atomic operation
-                if (driver.Status != DriverStatus.Active)
+                if (driver.Status != DriverStatus.Available)
                 {
                     System.Diagnostics.Debug.WriteLine($"[TryReserveDriver] Driver {driver.Name} no longer Active (status: {driver.Status})");
                     return null;

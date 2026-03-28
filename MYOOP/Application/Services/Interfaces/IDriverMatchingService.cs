@@ -1,4 +1,5 @@
 ﻿﻿using OOP.Domain.Entities;
+using OOP.Domain.Enums;
 
 namespace OOP.Application.Services.Interfaces
 {
@@ -6,19 +7,18 @@ namespace OOP.Application.Services.Interfaces
     {
         Task<Driver?> FindActiveDriver(
             GeoLocation pickup,
-            string VehicleType,
+            VehicleType VehicleType,
             IEnumerable<Guid>? excludedDriverIds = null);
 
-        /// <summary>
-        /// Tìm và reserve một tài xế một cách atomic (tránh race condition)
-        /// </summary>
-        Task<Driver?> FindAndReserveDriver(
-            GeoLocation pickup,
-            string VehicleType,
-            IEnumerable<Guid>? excludedDriverIds = null,
-            int retryCount = 0);
+        Task<List<Driver>> FindAvailableDrivers(GeoLocation pickup, VehicleType vehicleType, IEnumerable<Guid>? excludedDriverIds = null);
 
         Task<Driver?> MatchDriver(Trip trip);
-        Task<List<Driver>> GetNearbyDrivers(GeoLocation pickup, string VehicleType, double maxKm);
+        Task<List<Driver>> GetNearbyDrivers(GeoLocation pickup, VehicleType VehicleType, double maxKm);
+
+        /// <summary>
+        /// Gửi request tuần tự: tìm tài xế gần nhất (loại trừ rejected) và trả về.
+        /// Không thay đổi state — chỉ trả về tài xế để caller gửi thông báo.
+        /// </summary>
+        Task<Driver?> DispatchToNearestDriver(Trip trip);
     }
 }

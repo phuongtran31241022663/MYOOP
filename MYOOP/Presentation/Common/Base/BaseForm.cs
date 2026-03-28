@@ -48,7 +48,6 @@ namespace OOP.Presentation.BaseForms
             Font = BodyFont;
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = PageBg;
-            FormBorderStyle = FormBorderStyle.Sizable;
             AutoScaleMode = AutoScaleMode.Font;
             DoubleBuffered = true; // Reduces flicker when repainting controls
         }

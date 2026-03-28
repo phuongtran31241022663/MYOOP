@@ -12,6 +12,8 @@ namespace OOP.Infrastructure
         private static Logger? _instance;
         private readonly string _logFilePath;
         private readonly bool _enableConsoleOutput;
+        private readonly HashSet<string> _recentLogs = new();
+        private DateTime _lastLogTime = DateTime.MinValue;
 
         private Logger()
         {
@@ -56,6 +58,22 @@ namespace OOP.Infrastructure
             {
                 try
                 {
+                    // Prevent duplicate logs within 100ms window
+                    var now = DateTime.Now;
+                    var key = $"{message.GetHashCode()}_{level}";
+                    if (_recentLogs.Contains(key) && (now - _lastLogTime).TotalMilliseconds < 100)
+                    {
+                        return;
+                    }
+                    _recentLogs.Add(key);
+                    _lastLogTime = now;
+                    
+                    // Clean up old entries
+                    if (_recentLogs.Count > 1000)
+                    {
+                        _recentLogs.Clear();
+                    }
+                    
                     File.AppendAllText(_logFilePath, logEntry + Environment.NewLine);
                     
                     if (_enableConsoleOutput || level == LogLevel.Error)

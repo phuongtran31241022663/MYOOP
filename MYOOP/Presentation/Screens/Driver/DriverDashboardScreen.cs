@@ -16,12 +16,6 @@ namespace OOP.Presentation.Screens.Driver
     /// </summary>
     public class DriverDashboardScreen : UserControl, IScreen
     {
-        // ── Constructor ───────────────────────────────────────────────────────
-        public DriverDashboardScreen()
-        {
-            DoubleBuffered = true; // Reduces flicker when repainting cards
-        }
-
         // ── Dependencies ──────────────────────────────────────────────────────
         private readonly DriverShell _shell;
         private readonly ITripService _tripService;
@@ -76,6 +70,7 @@ namespace OOP.Presentation.Screens.Driver
             IUserService userService,
             ISimulationService simulationService)
         {
+            DoubleBuffered = true; // Reduces flicker when repainting cards
             _shell = shell;
             _tripService = tripService;
             _userService = userService;
@@ -365,13 +360,13 @@ namespace OOP.Presentation.Screens.Driver
             try
             {
                 var refreshed = await _userService.GetUserProfile(_shell.Driver.Id);
-                if (refreshed is DriverEntity rd) _shell.Driver.SyncFrom(rd);
+                if (refreshed is DriverEntity rd) _shell.Driver.RestoreFromSnapshot(rd);
 
                 RefreshStatsStrip();
 
-                if (_shell.Driver.Status == DriverStatus.Inactive)
+                if (_shell.Driver.Status == DriverStatus.Offline)
                 {
-                    ShowEmpty("Bạn đang Ngoại tuyến\nBật Online trên header để nhận chuyến.");
+                    ShowEmpty("Bạn đang Nghỉ\nBật Active trên header để nhận chuyến.");
                     return;
                 }
 
@@ -388,7 +383,7 @@ namespace OOP.Presentation.Screens.Driver
                     {
                         await _userService.ForceRecoverDriverStatus(_shell.Driver.Id);
                         var r2 = await _userService.GetUserProfile(_shell.Driver.Id);
-                        if (r2 is DriverEntity rd2) _shell.Driver.SyncFrom(rd2);
+                        if (r2 is DriverEntity rd2) _shell.Driver.RestoreFromSnapshot(rd2);
                         AddLog("Đã phục hồi về Active.");
                     }
                     catch (Exception ex) { AddLog($"[Lỗi phục hồi] {ex.Message}"); }
@@ -491,9 +486,9 @@ namespace OOP.Presentation.Screens.Driver
             try
             {
                 var refreshed = await _userService.GetUserProfile(_shell.Driver.Id);
-                if (refreshed is DriverEntity rd) _shell.Driver.SyncFrom(rd);
+                if (refreshed is DriverEntity rd) _shell.Driver.RestoreFromSnapshot(rd);
 
-                if (_shell.Driver.Status != DriverStatus.Active)
+                if (_shell.Driver.Status != DriverStatus.Available)
                 {
                     MessageBox.Show("Tài xế không ở trạng thái sẵn sàng.", "Thông báo",
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -514,7 +509,7 @@ namespace OOP.Presentation.Screens.Driver
                 _pendingTrip = null;
 
                 var updatedDriver = await _userService.GetUserProfile(_shell.Driver.Id);
-                if (updatedDriver is DriverEntity ud) _shell.Driver.SyncFrom(ud);
+                if (updatedDriver is DriverEntity ud) _shell.Driver.RestoreFromSnapshot(ud);
 
                 await _shell.OnTripAccepted(trip!);
                 AddLog($"Đã nhận: {trip!.Pickup.Name} → {trip.Destination.Name}");
@@ -650,7 +645,11 @@ namespace OOP.Presentation.Screens.Driver
         private void UpdateRevenue(List<Trip> trips)
         {
             if (InvokeRequired) { BeginInvoke(() => UpdateRevenue(trips)); return; }
-            var total = trips.Where(t => t.Status == TripStatus.Completed).Sum(t => t.Fare);
+            var today = DateTime.Today;
+            var total = trips
+                .Where(t => t.Status == TripStatus.Completed)
+                .Where(t => (t.CompletedAt ?? t.RequestedAt).ToLocalTime().Date == today)
+                .Sum(t => t.Fare);
             _lblRevenue.Text = $"Doanh thu hôm nay:\n{total:N0} đ";
         }
 

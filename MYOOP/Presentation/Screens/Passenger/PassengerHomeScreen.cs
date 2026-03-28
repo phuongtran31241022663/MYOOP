@@ -1,10 +1,12 @@
-﻿using OOP.Application.Services.Interfaces;
+using OOP.Application.Services.Interfaces;
+using OOP.Domain.Entities;
 using OOP.Domain.Enums;
-using MYOOP.Presentation.Common.MapComponent;
+using OOP.Presentation.Common.MapComponent;
 using OOP.Presentation.Common.Components;
 using OOP.Presentation.Common.Theme;
 using OOP.Presentation.Base;
 using DomainLocation = OOP.Domain.Entities.GeoLocation;
+using DriverEntity = OOP.Domain.Entities.Driver;
 
 namespace OOP.Presentation.Screens.Passenger
 {
@@ -19,18 +21,36 @@ namespace OOP.Presentation.Screens.Passenger
     /// </summary>
     public class PassengerHomeScreen : UserControl, IScreen
     {
-        // ── Constructor ───────────────────────────────────────────────────────
-        public PassengerHomeScreen()
-        {
-            DoubleBuffered = true; // Reduces flicker when repainting cards
-        }
-
-        // ── Dependencies ──────────────────────────────────────────────────────
+         // ── Dependencies ──────────────────────────────────────────────────────
         private readonly PassengerShell _shell;
         private readonly ITripService _tripService;
+        private readonly IUserService _userService;
         private readonly IFareService _fareService;
-        private readonly IRouteService _routeService;
-        private readonly HttpClient _http;
+         private readonly IRouteService _routeService;
+         private readonly HttpClient _http;
+
+         // ── Constructor ───────────────────────────────────────────────────────
+        public PassengerHomeScreen(
+            PassengerShell shell,
+            ITripService tripService,
+            IUserService userService,
+            HttpClient http,
+            IRouteService routeService,
+            IFareService fareService)
+        {
+            _shell = shell ?? throw new ArgumentNullException(nameof(shell));
+            _tripService = tripService ?? throw new ArgumentNullException(nameof(tripService));
+            _userService = userService ?? throw new ArgumentNullException(nameof(userService));
+            _http = http ?? throw new ArgumentNullException(nameof(http));
+            _routeService = routeService ?? throw new ArgumentNullException(nameof(routeService));
+            _fareService = fareService ?? throw new ArgumentNullException(nameof(fareService));
+
+             DoubleBuffered = true; // Reduces flicker when repainting cards
+
+             BuildLayout();
+
+             _nearbyTimer.Tick += async (_, _) => await RefreshNearby();
+         }
 
         // ── Map ───────────────────────────────────────────────────────────────
         private MapControl _mapControl = null!;
@@ -93,12 +113,7 @@ namespace OOP.Presentation.Screens.Passenger
             // Nếu đang có chuyến active → chỉ update trạng thái nút, không reset
             if (_shell.CurrentTrip != null)
             {
-                _btnRequest.Visible = false;
-                _btnCancel.Visible = true;
-                _btnCancel.Enabled = _shell.CurrentTrip.Status is
-                    TripStatus.Requested or TripStatus.Searching or TripStatus.Matched;
-                SetStatus(StatusText(_shell.CurrentTrip.Status),
-                          StatusColor(_shell.CurrentTrip.Status));
+                ApplyTripUpdate(_shell.CurrentTrip);
                 return;
             }
 
@@ -111,24 +126,6 @@ namespace OOP.Presentation.Screens.Passenger
         public bool OnNavigatingFrom() => true;
 
         // ─────────────────────────────────────────────────────────────────────
-        public PassengerHomeScreen(
-            PassengerShell shell,
-            ITripService tripService,
-            HttpClient http,
-            IRouteService routeService,
-            IFareService fareService)
-        {
-            _shell = shell ?? throw new ArgumentNullException(nameof(shell));
-            _tripService = tripService ?? throw new ArgumentNullException(nameof(tripService));
-            _http = http ?? throw new ArgumentNullException(nameof(http));
-            _routeService = routeService ?? throw new ArgumentNullException(nameof(routeService));
-            _fareService = fareService ?? throw new ArgumentNullException(nameof(fareService));
-
-            BuildLayout();
-
-            _nearbyTimer.Tick += async (_, _) => await RefreshNearby();
-        }
-
         // ── Build UI ──────────────────────────────────────────────────────────
 
         private void BuildLayout()
@@ -460,7 +457,8 @@ namespace OOP.Presentation.Screens.Passenger
             {
                 var route = await _routeService.GetFullRouteAsync(pickup, dest);
                 if (route == null) return;
-                var rule = await _fareService.GetFareRule(_selectedVehicle);
+                var vehicleType = Enum.Parse<VehicleType>(_selectedVehicle, true);
+                var rule = await _fareService.GetFareRule(vehicleType);
                 if (rule == null) return;
 
                 decimal fare = rule.CalculateFare(route.Distance);
@@ -484,7 +482,8 @@ namespace OOP.Presentation.Screens.Passenger
             {
                 var pickup = _locationPicker.Pickup;
                 if (pickup == null) return;
-                var drivers = await _tripService.GetNearbyDrivers(pickup, _selectedVehicle, 3.0);
+                var vehicleType = Enum.Parse<VehicleType>(_selectedVehicle, true);
+                var drivers = await _tripService.GetNearbyDrivers(pickup, vehicleType, 3.0);
                 _mapControl.UpdateNearbyDrivers(drivers);
             }
             catch { }
@@ -505,7 +504,8 @@ namespace OOP.Presentation.Screens.Passenger
 
             try
             {
-                var trip = await _tripService.RequestTrip(_shell.Passenger.Id, pickup, dest, _selectedVehicle);
+                var vehicleType = Enum.Parse<VehicleType>(_selectedVehicle, true);
+                var trip = await _tripService.RequestTrip(_shell.Passenger.Id, pickup, dest, vehicleType);
 
                 // Khóa UI trong lúc chờ
                 _locationPicker.Enabled = false;
@@ -550,12 +550,53 @@ namespace OOP.Presentation.Screens.Passenger
 
         // ── UI state helpers ──────────────────────────────────────────────────
 
+        public void ApplyTripUpdate(Trip trip)
+        {
+            if (InvokeRequired) { BeginInvoke(() => ApplyTripUpdate(trip)); return; }
+
+            _btnRequest.Visible = false;
+            _btnCancel.Visible = true;
+            _btnCancel.Enabled = trip.Status is
+                TripStatus.Requested or TripStatus.Searching or TripStatus.Matched;
+            SetStatus(StatusText(trip.Status), StatusColor(trip.Status));
+
+            _ = TryShowDriverInfo(trip);
+        }
+
         private void SetStatus(string text, Color color)
         {
             if (InvokeRequired) { BeginInvoke(() => SetStatus(text, color)); return; }
             _lblTripStatus.Text = text;
             _lblTripStatus.ForeColor = color;
             _pnlStatusBar.Visible = true;
+        }
+
+        private async Task TryShowDriverInfo(Trip trip)
+        {
+            if (trip.Status is TripStatus.Requested or TripStatus.Searching || !trip.DriverId.HasValue)
+            {
+                _pnlDriverInfo.Visible = false;
+                return;
+            }
+
+            try
+            {
+                var driver = await _userService.GetUserProfile(trip.DriverId.Value) as DriverEntity;
+                if (driver != null)
+                {
+                    var vehicleType = driver.Vehicle != null ? (driver.Vehicle.GetVehicleType() == VehicleType.Motorbike ? "Xe máy" : "Ô tô") : "N/A";
+                    var plate = driver.Vehicle?.PlateNumber ?? "N/A";
+                    ShowDriverInfo($"Tài xế: {driver.Name} | {vehicleType} | {plate}");
+                }
+                else
+                {
+                    ShowDriverInfo("Đã có tài xế nhận chuyến.");
+                }
+            }
+            catch
+            {
+                ShowDriverInfo("Đã có tài xế nhận chuyến.");
+            }
         }
 
         private void ShowDriverInfo(string text)

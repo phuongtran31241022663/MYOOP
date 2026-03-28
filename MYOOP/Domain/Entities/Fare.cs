@@ -1,5 +1,5 @@
-﻿using OOP.Domain.Enums;
-using System.Runtime.Serialization;
+﻿using System.Runtime.Serialization;
+using OOP.Domain.Enums;
 
 namespace OOP.Domain.Entities
 {
@@ -11,32 +11,32 @@ namespace OOP.Domain.Entities
 
         [DataMember] public VehicleType VehicleType { get; private set; }
 
-        private decimal _baseFare;
+        private decimal baseFare;
         [DataMember]
         public decimal BaseFare
         {
-            get => _baseFare;
-            private set => _baseFare = value < 0
-                ? throw new ArgumentException("Giá cơ bản (mở cửa) không thể âm.")
+            get => baseFare;
+            private set => baseFare = value < 0
+                ? throw new ArgumentException("Giá cơ bản không thể âm.")
                 : value;
         }
 
-        private decimal _pricePerKm;
+        private decimal pricePerKm;
         [DataMember]
         public decimal PricePerKm
         {
-            get => _pricePerKm;
-            private set => _pricePerKm = value <= 0
+            get => pricePerKm;
+            private set => pricePerKm = value <= 0
                 ? throw new ArgumentException("Giá mỗi km phải lớn hơn 0.")
                 : value;
         }
 
-        private decimal _commissionRate;
+        private decimal commissionRate;
         [DataMember]
         public decimal CommissionRate
         {
-            get => _commissionRate;
-            private set => _commissionRate = value < 0 || value > 1
+            get => commissionRate;
+            private set => commissionRate = value < 0 || value > 1
                 ? throw new ArgumentException("Tỷ lệ hoa hồng phải từ 0 đến 1 (0% – 100%).")
                 : value;
         }
@@ -49,17 +49,12 @@ namespace OOP.Domain.Entities
         public Fare(VehicleType vehicleType, decimal baseFare, decimal pricePerKm, decimal commissionRate)
         {
             Id = Guid.NewGuid();
-            // Properties will validate automatically via their setters
             VehicleType = vehicleType;
-            BaseFare = baseFare;
-            PricePerKm = pricePerKm;
-            CommissionRate = commissionRate;
-            UpdatedAt = DateTime.UtcNow;
+            UpdateRule(baseFare, pricePerKm, commissionRate);
         }
         #endregion
         public void UpdateRule(decimal baseFare, decimal pricePerKm, decimal commissionRate)
         {
-            // Properties will validate automatically via their setters
             BaseFare = baseFare;
             PricePerKm = pricePerKm;
             CommissionRate = commissionRate;
@@ -75,5 +70,6 @@ namespace OOP.Domain.Entities
 
             return Math.Floor(fare / 1000m) * 1000m;
         }
+        public decimal CalculateCommission(decimal tripFare) => tripFare * CommissionRate;
     }
 }

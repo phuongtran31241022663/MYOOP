@@ -1,4 +1,4 @@
-﻿﻿using OOP.Domain.Enums;
+﻿using OOP.Domain.Enums;
 using OOP.Domain.Events;
 using System.Runtime.Serialization;
 
@@ -8,56 +8,55 @@ namespace OOP.Domain.Entities
     public class Driver : User
     {
         #region Properties
-        // Trạng thái tài khoản - chỉ có Passenger và Driver có IsActive
         [DataMember] public bool IsActive { get; private set; } = true;
 
-        [DataMember] public DriverStatus Status { get; private set; }
+        [DataMember] public DriverStatus Status { get; private set; } = DriverStatus.Available;
 
-        private GeoLocation _position = null!;
+        private GeoLocation position = null!;
         [DataMember]
         public GeoLocation Position
         {
-            get => _position;
-            private set => _position = value ?? throw new ArgumentNullException("Vị trí không được null.");
+            get => position;
+            private set => position = value ?? throw new ArgumentNullException("Vị trí không được null.");
         }
 
-        private string _licenseNumber = string.Empty;
+        private string licenseNumber = string.Empty;
         [DataMember]
         public string LicenseNumber
         {
-            get => _licenseNumber;
-            private set => _licenseNumber = string.IsNullOrWhiteSpace(value)
+            get => licenseNumber;
+            private set => licenseNumber = string.IsNullOrWhiteSpace(value)
                 ? throw new ArgumentException("Số giấy phép không hợp lệ.")
                 : value.Trim();
         }
 
-        private Vehicle _vehicle = null!;
+        private Vehicle vehicle = null!;
         [DataMember]
         public Vehicle Vehicle
         {
-            get => _vehicle;
-            private set => _vehicle = value ?? throw new ArgumentNullException("Xe không được null.");
+            get => vehicle;
+            private set => vehicle = value ?? throw new ArgumentNullException("Xe không được null.");
         }
 
         // Tài chính
-        private decimal _wallet;
+        private decimal wallet;
         [DataMember]
         public decimal Wallet
         {
-            get => _wallet;
-            private set => _wallet = value < 0
+            get => wallet;
+            private set => wallet = value < 0
                 ? throw new ArgumentException("Ví không thể âm.")
                 : value;
         }
 
         [DataMember] public DateTime? WalletUpdatedAt { get; private set; }
 
-        private decimal _income;
+        private decimal income;
         [DataMember]
         public decimal Income
         {
-            get => _income;
-            private set => _income = value < 0
+            get => income;
+            private set => income = value < 0
                 ? throw new ArgumentException("Thu nhập không thể âm.")
                 : value;
         }
@@ -72,27 +71,22 @@ namespace OOP.Domain.Entities
         public decimal AverageRating =>
             ratingCount == 0 ? 5.0m : Math.Round(ratingTotal / ratingCount, 2);
 
-        // Domain Events (transient - never persisted)
-        private List<DomainEvent>? _domainEvents;
-        private List<DomainEvent> DomainEventsInternal => _domainEvents ??= new List<DomainEvent>();
+        private List<DomainEvent>? domainEvents;
+        private List<DomainEvent> DomainEventsInternal => domainEvents ??= new List<DomainEvent>();
         public IReadOnlyList<DomainEvent> DomainEvents => DomainEventsInternal.AsReadOnly();
         #endregion
 
         #region Valid Status Transitions
-        /// <summary>
-        /// Dictionary chỉ cho phép chuyển trạng thái hợp lệ cho Driver
-        /// Driver không thể tự set Offline - đó là trạng thái hệ thống (tắt app)
-        /// </summary>
         private static readonly Dictionary<DriverStatus, HashSet<DriverStatus>> ValidTransitions = new()
         {
-            // Offline: chỉ có thể chuyển sang Available (khi mở app)
+            // Offline: chỉ có thể chuyển sang Available
             { DriverStatus.Offline, new HashSet<DriverStatus> { DriverStatus.Available } },
 
-            // Available: có thể chuyển sang Busy hoặc Offline
-            { DriverStatus.Available, new HashSet<DriverStatus> { DriverStatus.Busy, DriverStatus.Offline } },
+            // Available: có thể chuyển sang OnTrip hoặc Offline
+            { DriverStatus.Available, new HashSet<DriverStatus> { DriverStatus.OnTrip, DriverStatus.Offline } },
 
-            // Busy: chỉ có thể chuyển sang Available (khi hoàn thành chuyến)
-            { DriverStatus.Busy, new HashSet<DriverStatus> { DriverStatus.Available } }
+            // OnTrip: chỉ có thể chuyển sang Available
+            { DriverStatus.OnTrip, new HashSet<DriverStatus> { DriverStatus.Available } }
         };
 
         private static bool CanTransition(DriverStatus from, DriverStatus to)
@@ -102,7 +96,7 @@ namespace OOP.Domain.Entities
         #endregion
 
         #region Constructors
-        protected Driver() { _position = null!; _domainEvents = new List<DomainEvent>(); }
+        protected Driver() { position = null!; domainEvents = new List<DomainEvent>(); }
 
         public Driver(
             Guid id,
@@ -115,11 +109,10 @@ namespace OOP.Domain.Entities
             string licenseNumber)
             : base(id, name, phone, password)
         {
-            // Properties will validate automatically via their setters
             Position = position;
             LicenseNumber = licenseNumber;
             Vehicle = CloneVehicleWithDriver(vehicle ?? throw new ArgumentNullException(nameof(vehicle)), Id);
-            Status = DriverStatus.Offline; // Mặc định là offline khi tạo mới
+            Status = DriverStatus.Offline;
             IsActive = isActive;
             Wallet = 0;
             Income = 0;
@@ -151,7 +144,7 @@ namespace OOP.Domain.Entities
         }
 
         #region Trạng thái tài khoản
-        public void Deactivate(Guid actorId)
+        public void DeActivateAccount(Guid actorId)
         {
             if (Id == actorId)
                 throw new InvalidOperationException("Bạn không thể tự khóa tài khoản của chính mình.");
@@ -159,13 +152,14 @@ namespace OOP.Domain.Entities
             if (!IsActive)
                 throw new InvalidOperationException("Tài khoản đã bị khóa.");
 
-            if (Status == DriverStatus.Busy)
+            if (Status == DriverStatus.OnTrip)
                 throw new InvalidOperationException("Không thể khóa tài xế đang chạy.");
 
             IsActive = false;
+            Status = DriverStatus.Offline;
         }
 
-        public void Activate()
+        public void ActivateAccount()
         {
             if (IsActive)
                 throw new InvalidOperationException("Tài khoản đang hoạt động.");
@@ -174,21 +168,16 @@ namespace OOP.Domain.Entities
         }
         #endregion
 
-        #region Trạng thái lái xe - Có validation
-        /// <summary>
-        /// Chuyển sang trạng thái Available (rảnh, nhận chuyến được)
-        /// Idempotent: nếu đã Available thì không làm gì cả.
-        /// </summary>
+        #region Trạng thái lái xe
         public void SetAvailable()
         {
             if (!IsActive)
                 throw new InvalidOperationException("Tài xế đã bị vô hiệu hóa.");
 
-            // Already available — no-op, no throw (idempotent)
             if (Status == DriverStatus.Available)
                 return;
 
-            if (Status == DriverStatus.Busy)
+            if (Status == DriverStatus.OnTrip)
                 throw new InvalidOperationException("Không thể chuyển sang Sẵn sàng khi đang bận.");
 
             if (!CanTransition(Status, DriverStatus.Available))
@@ -196,14 +185,11 @@ namespace OOP.Domain.Entities
 
             var oldStatus = Status;
             Status = DriverStatus.Available;
-            
+
             AddDomainEvent(new DriverStatusChangedEvent(Id, oldStatus, Status));
         }
 
-        /// <summary>
-        /// Chuyển sang trạng thái Busy (đang chạy chuyến, không nhận chuyến mới)
-        /// </summary>
-        public void SetBusy()
+        public void SetOnTrip()
         {
             if (!IsActive)
                 throw new InvalidOperationException("Tài xế đã bị vô hiệu hóa.");
@@ -211,33 +197,49 @@ namespace OOP.Domain.Entities
             if (Status != DriverStatus.Available)
                 throw new InvalidOperationException("Tài xế phải ở trạng thái Sẵn sàng.");
 
-            if (!CanTransition(Status, DriverStatus.Busy))
+            if (!CanTransition(Status, DriverStatus.OnTrip))
                 throw new InvalidOperationException($"Không thể chuyển từ trạng thái '{Status}' sang 'Bận'.");
 
             var oldStatus = Status;
-            Status = DriverStatus.Busy;
-            
+            Status = DriverStatus.OnTrip;
+
+            AddDomainEvent(new DriverStatusChangedEvent(Id, oldStatus, Status));
+        }
+        
+        public void SetOffline()
+        {
+            if (!IsActive)
+                throw new InvalidOperationException("Tài xế đã bị vô hiệu hóa.");
+
+            if (Status == DriverStatus.Offline)
+                return;
+
+            if (Status == DriverStatus.OnTrip)
+                throw new InvalidOperationException("Không thể ngắt kết nối khi đang chạy chuyến.");
+
+            if (!CanTransition(Status, DriverStatus.Offline))
+                throw new InvalidOperationException($"Không thể chuyển từ trạng thái '{Status}' sang 'Inactive'.");
+
+            var oldStatus = Status;
+            Status = DriverStatus.Offline;
+
             AddDomainEvent(new DriverStatusChangedEvent(Id, oldStatus, Status));
         }
 
         /// <summary>
-        /// Đánh dấu tài xế ngoại tuyến (tắt app)
-        /// Chỉ có hệ thống mới được gọi phương thức này - tài xế không thể tự set offline
+        /// Force driver status back to Available (bypass status transition guard).
+        /// Note: still requires account to be active.
         /// </summary>
-        public void MarkAsOffline()
+        public void ForceSetAvailable()
         {
-            if (Status == DriverStatus.Busy)
-                throw new InvalidOperationException("Không thể ngoại tuyến khi đang trong chuyến đi.");
+            if (!IsActive)
+                throw new InvalidOperationException("Tài xế đã bị vô hiệu hóa.");
 
-            if (Status == DriverStatus.Offline)
-                throw new InvalidOperationException("Tài xế đã ở trạng thái Ngoại tuyến.");
-
-            if (!CanTransition(Status, DriverStatus.Offline))
-                throw new InvalidOperationException($"Không thể chuyển từ trạng thái '{Status}' sang 'Ngoại tuyến'.");
+            if (Status == DriverStatus.Available)
+                return;
 
             var oldStatus = Status;
-            Status = DriverStatus.Offline;
-            
+            Status = DriverStatus.Available;
             AddDomainEvent(new DriverStatusChangedEvent(Id, oldStatus, Status));
         }
 
@@ -264,32 +266,28 @@ namespace OOP.Domain.Entities
         public void UpdateLocation(GeoLocation location)
         {
             Position = location ?? throw new ArgumentNullException(nameof(location));
-            
+
             AddDomainEvent(new DriverLocationUpdatedEvent(Id, location));
         }
 
-        /// <summary>
-        /// Syncs state from another Driver object (e.g., after refresh from database).
-        /// Used to update local driver state after operations like completing a trip.
-        /// </summary>
-        public void SyncFrom(Driver other)
+        internal void RestoreFromSnapshot(Driver snapshot)
         {
-            if (other == null)
-                throw new ArgumentNullException(nameof(other));
+            if (snapshot == null)
+                throw new ArgumentNullException(nameof(snapshot));
 
-            Status = other.Status;
-            IsActive = other.IsActive;
-            Wallet = other.Wallet;
-            TotalTrips = other.TotalTrips;
-            ratingTotal = other.ratingTotal;
-            ratingCount = other.ratingCount;
-            _position = other._position;
+            Status = snapshot.Status;
+            IsActive = snapshot.IsActive;
+            Wallet = snapshot.Wallet;
+            TotalTrips = snapshot.TotalTrips;
+            ratingTotal = snapshot.ratingTotal;
+            ratingCount = snapshot.ratingCount;
+            position = snapshot.position;
         }
 
         // ── Chuyến đi ───────────────────────────────────────────────────────
         public void AddTrip()
         {
-            if (Status != DriverStatus.Busy)
+            if (Status != DriverStatus.OnTrip)
                 throw new InvalidOperationException("Chỉ được cộng chuyến khi đang chạy.");
 
             TotalTrips++;
@@ -300,7 +298,6 @@ namespace OOP.Domain.Entities
 
             if (oldScore.HasValue)
             {
-                // Validate that oldScore was in valid range
                 if (oldScore.Value < 1 || oldScore.Value > 5)
                     throw new ArgumentException("Sao cũ không hợp lệ.");
 
@@ -345,15 +342,17 @@ namespace OOP.Domain.Entities
         {
             string tinhTrang = Status switch
             {
-                DriverStatus.Available => "Sẵn sàng",
-                DriverStatus.Busy => "Đang bận",
-                DriverStatus.Offline => "Ngoại tuyến",
+                DriverStatus.Available => "Hoạt động",
+                DriverStatus.OnTrip => "Đang trong chuyến",
+                DriverStatus.Offline => "Nghỉ",
                 _ => "Không xác định"
             };
 
-            return $"{base.GetInfo()}\nTrạng thái: {tinhTrang}" +
-                   $"\nXe: {Vehicle.Model} (Biển số: {Vehicle.PlateNumber})" +
-                   $"\nĐánh giá: {AverageRating}⭐ | Tổng chuyến: {TotalTrips} | Ví: {Wallet:N0} VNĐ | Thu nhập: {Income:N0} VNĐ";
+            return $"{base.GetInfo()}\n" +
+           $"Trạng thái: {tinhTrang}\n" +
+           $"Phương tiện: {Vehicle.Model} | Biển số: {Vehicle.PlateNumber}\n" +
+           $"Đánh giá: {AverageRating:F1} | Tổng chuyến: {TotalTrips}\n" +
+           $"Ví: {Wallet:N0} VNĐ | Doanh thu: {Income:N0} VNĐ";
         }
 
         // ── Domain Events ─────────────────────────────────────────────────────

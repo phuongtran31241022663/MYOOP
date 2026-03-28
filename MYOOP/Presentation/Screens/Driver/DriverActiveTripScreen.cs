@@ -34,8 +34,9 @@ namespace OOP.Presentation.Screens.Driver
         private Trip? _trip;
         private DriverEntity? _driver;
         private bool _isRefreshing = false;
-        private readonly System.Windows.Forms.Timer _timer = new() { Interval = 2000 };
+        private readonly System.Windows.Forms.Timer _timer = new() { Interval = 5000 };
         private decimal _currentCommissionRate = 0.2m;
+        private DateTime _lastDriverProfileFetchUtc = DateTime.MinValue;
 
         // ── Map ───────────────────────────────────────────────────────────────
         private GMapControl _map = null!;
@@ -105,7 +106,7 @@ namespace OOP.Presentation.Screens.Driver
 
         public bool OnNavigatingFrom()
         {
-            // Không dừng timer khi rời — timer chạy nền để update Shell.CurrentTrip
+            _timer.Stop();
             return true;
         }
 
@@ -370,8 +371,20 @@ namespace OOP.Presentation.Screens.Driver
                 // Sync Shell state
                 _shell.SetCurrentTrip(_trip);
 
-                var userProfile = await _userService.GetUserProfile(_shell.Driver.Id);
-                _driver = userProfile as DriverEntity;
+                var nowUtc = DateTime.UtcNow;
+                if (_driver == null || (nowUtc - _lastDriverProfileFetchUtc) > TimeSpan.FromSeconds(15))
+                {
+                    var userProfile = await _userService.GetUserProfile(_shell.Driver.Id);
+                    if (userProfile is DriverEntity refreshedDriver)
+                        _driver = refreshedDriver;
+                    if (_driver == null)
+                        _driver = _shell.Driver;
+                    _lastDriverProfileFetchUtc = nowUtc;
+                }
+                else if (_driver == null)
+                {
+                    _driver = _shell.Driver;
+                }
 
                 if (InvokeRequired) { BeginInvoke(() => ApplyTripToUI(_trip)); }
                 else ApplyTripToUI(_trip);
@@ -444,7 +457,7 @@ namespace OOP.Presentation.Screens.Driver
             _btnConfirmPayment.Enabled = (trip.Status == TripStatus.Completed);
         }
 
-        private async Task<decimal> GetCommissionRate(string vehicleType)
+        private async Task<decimal> GetCommissionRate(VehicleType vehicleType)
         {
             try
             {
@@ -474,20 +487,40 @@ namespace OOP.Presentation.Screens.Driver
             _markerOverlay.Markers.Clear();
 
             if (_driver?.Position != null)
-                _markerOverlay.Markers.Add(new GMarkerGoogle(
+            {
+                // Always show driver marker with visible label
+                var driverMarker = new GMarkerGoogle(
                     new PointLatLng(_driver.Position.Lat, _driver.Position.Lng),
                     GMarkerGoogleType.blue_dot)
-                { ToolTipText = "Tài xế" });
+                {
+                    ToolTipText = $"Tài xế: {_driver.Name}",
+                    ToolTipMode = MarkerTooltipMode.Always // Always show tooltip
+                };
+                _markerOverlay.Markers.Add(driverMarker);
+                
+                // Follow driver - center camera on driver position
+                _map.Position = new PointLatLng(_driver.Position.Lat, _driver.Position.Lng);
+            }
 
-            _markerOverlay.Markers.Add(new GMarkerGoogle(
+            // Always show pickup marker with visible label
+            var pickupMarker = new GMarkerGoogle(
                 new PointLatLng(_trip.Pickup.Lat, _trip.Pickup.Lng),
                 GMarkerGoogleType.green_dot)
-            { ToolTipText = "Điểm đón" });
+            {
+                ToolTipText = _trip.Pickup.Name,
+                ToolTipMode = MarkerTooltipMode.Always // Always show tooltip
+            };
+            _markerOverlay.Markers.Add(pickupMarker);
 
-            _markerOverlay.Markers.Add(new GMarkerGoogle(
+            // Always show destination marker with visible label
+            var dropoffMarker = new GMarkerGoogle(
                 new PointLatLng(_trip.Destination.Lat, _trip.Destination.Lng),
                 GMarkerGoogleType.red_dot)
-            { ToolTipText = "Điểm đến" });
+            {
+                ToolTipText = _trip.Destination.Name,
+                ToolTipMode = MarkerTooltipMode.Always // Always show tooltip
+            };
+            _markerOverlay.Markers.Add(dropoffMarker);
         }
 
         private async Task DrawRoutes()
@@ -514,13 +547,91 @@ namespace OOP.Presentation.Screens.Driver
                 var full = await _routeService.GetFullRouteAsync(_trip.Pickup, _trip.Destination);
                 if (full?.Points.Count >= 2)
                 {
-                    var route = new GMapRoute(full.Points.Select(p => new PointLatLng(p.Lat, p.Lng)), "tripRoute")
-                    { Stroke = new Pen(Color.FromArgb(180, 0, 120, 255), 4) };
-                    _routeOverlay.Routes.Add(route);
-                    SafeInvoke(() => { _map.ZoomAndCenterRoute(route); _map.Refresh(); });
+                    // For Started status, calculate remaining route based on driver position
+                    var allPoints = full.Points.Select(p => new PointLatLng(p.Lat, p.Lng)).ToList();
+                    
+                    if (_driver?.Position != null && _trip.Status == TripStatus.Started)
+                    {
+                        // Find the closest point on the route to the driver
+                        int closestIndex = FindClosestRoutePointIndex(allPoints, _driver.Position);
+                        
+                        // Only show remaining route (from closest point to destination)
+                        var remainingPoints = allPoints.Skip(closestIndex).ToList();
+                        if (remainingPoints.Count >= 2)
+                        {
+                            var route = new GMapRoute(remainingPoints, "tripRouteRemaining")
+                            { Stroke = new Pen(Color.FromArgb(180, 0, 120, 255), 4) };
+                            _routeOverlay.Routes.Add(route);
+                        }
+                        
+                        // Also draw the traveled portion in a different color (optional)
+                        if (closestIndex > 0)
+                        {
+                            var traveledPoints = allPoints.Take(closestIndex + 1).ToList();
+                            var traveledRoute = new GMapRoute(traveledPoints, "tripRouteTraveled")
+                            { Stroke = new Pen(Color.FromArgb(80, 100, 100, 100), 3) }; // Gray for traveled
+                            _driverOverlay.Routes.Add(traveledRoute);
+                        }
+                    }
+                    else
+                    {
+                        // Show full route when not started or no driver position
+                        var route = new GMapRoute(allPoints, "tripRoute")
+                        { Stroke = new Pen(Color.FromArgb(180, 0, 120, 255), 4) };
+                        _routeOverlay.Routes.Add(route);
+                    }
+                    
+                    SafeInvoke(() =>
+                    {
+                        var firstRoute = _routeOverlay.Routes.FirstOrDefault();
+                        if (firstRoute != null)
+                            _map.ZoomAndCenterRoute(firstRoute);
+                        _map.Refresh();
+                    });
                 }
             }
         }
+
+        /// <summary>
+        /// Find the index of the closest point on the route to the driver's current position
+        /// </summary>
+        private int FindClosestRoutePointIndex(List<PointLatLng> routePoints, GeoLocation driverPos)
+        {
+            if (routePoints.Count == 0) return 0;
+            
+            double minDistance = double.MaxValue;
+            int closestIndex = 0;
+            
+            for (int i = 0; i < routePoints.Count; i++)
+            {
+                double dist = CalculateDistance(routePoints[i].Lat, routePoints[i].Lng, 
+                    driverPos.Lat, driverPos.Lng);
+                if (dist < minDistance)
+                {
+                    minDistance = dist;
+                    closestIndex = i;
+                }
+            }
+            
+            return closestIndex;
+        }
+
+        /// <summary>
+        /// Calculate distance between two points using Haversine formula (in km)
+        /// </summary>
+        private double CalculateDistance(double lat1, double lng1, double lat2, double lng2)
+        {
+            const double R = 6371; // Earth's radius in km
+            double dLat = ToRadians(lat2 - lat1);
+            double dLng = ToRadians(lng2 - lng1);
+            double a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+                       Math.Cos(ToRadians(lat1)) * Math.Cos(ToRadians(lat2)) *
+                       Math.Sin(dLng / 2) * Math.Sin(dLng / 2);
+            double c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+            return R * c;
+        }
+
+        private double ToRadians(double deg) => deg * Math.PI / 180;
 
         private void SafeInvoke(Action a)
         {
@@ -533,44 +644,39 @@ namespace OOP.Presentation.Screens.Driver
         {
             if (_trip == null) return;
             try { await _tripService.MarkArrived(_trip.Id); await RefreshAsync(); }
-            catch (Exception ex) { MessageBox.Show(ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            catch (Exception ex) { FormHelper.ShowError(ex.Message); }
         }
 
         private async Task OnStartClicked()
         {
             if (_trip == null) return;
             try { await _tripService.StartTrip(_trip.Id); await _simulationService.SimulateTripProgress(_trip.Id); await RefreshAsync(); }
-            catch (Exception ex) { MessageBox.Show(ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            catch (Exception ex) { FormHelper.ShowError(ex.Message); }
         }
 
         private async Task OnCompleteClicked()
         {
             if (_trip == null) return;
-            if (MessageBox.Show("Xác nhận đã đến điểm đến?\nChuyến đi sẽ kết thúc.",
-                "Kết thúc chuyến", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            if (!FormHelper.ShowConfirm("Xác nhận đã đến điểm đến?\nChuyến đi sẽ kết thúc.", "Kết thúc chuyến")) return;
             try
             {
                 await _tripService.CompleteTrip(_trip.Id);
                 _timer.Stop();
                 await RefreshAsync();
             }
-            catch (Exception ex) { MessageBox.Show(ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            catch (Exception ex) { FormHelper.ShowError(ex.Message); }
         }
 
         private async Task OnConfirmPaymentClicked()
         {
             if (_trip == null) return;
-            if (MessageBox.Show(
-                $"Xác nhận đã nhận {_trip.Fare:N0} VNĐ tiền mặt?",
-                "Xác nhận thanh toán", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            if (!FormHelper.ShowConfirm($"Xác nhận đã nhận {_trip.Fare:N0} VNĐ tiền mặt?", "Xác nhận thanh toán")) return;
 
             try
             {
                 await _tripService.ConfirmPayment(_trip.Id, _trip.Fare);
 
-                MessageBox.Show(
-                    "✅ Hoàn tất!\nThu nhập đã được cộng vào ví.",
-                    "Thành công", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                FormHelper.ShowSuccess("Hoàn tất!\nThu nhập đã được cộng vào ví.");
 
                 // KEY POINT: không Close() — báo Shell kết thúc chuyến
                 _shell.OnTripEnded();
@@ -580,18 +686,23 @@ namespace OOP.Presentation.Screens.Driver
                 // Quay về Dashboard
                 await _shell.Nav.NavigateTo(DriverShell.KEY_DASHBOARD);
             }
-            catch (Exception ex) { MessageBox.Show(ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            catch (Exception ex) { FormHelper.ShowError(ex.Message); }
         }
 
         private async Task OnMapRightClick(int x, int y)
         {
-            if (MessageBox.Show("Cập nhật vị trí tài xế tại điểm này?", "Cập nhật vị trí",
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            if (!FormHelper.ShowConfirm("Cập nhật vị trí tài xế tại điểm này?", "Cập nhật vị trí")) return;
 
             var pt = _map.FromLocalToLatLng(x, y);
             var loc = new GeoLocation("Vị trí hiện tại", "Cập nhật thủ công", pt.Lat, pt.Lng);
-            try { await _userService.UpdateDriverLocation(_shell.Driver.Id, loc); await RefreshAsync(); }
-            catch (Exception ex) { MessageBox.Show(ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            try
+            {
+                await _userService.UpdateDriverLocation(_shell.Driver.Id, loc);
+                _shell.Driver.UpdateLocation(loc);
+                _driver = _shell.Driver;
+                await RefreshAsync();
+            }
+            catch (Exception ex) { FormHelper.ShowError(ex.Message); }
         }
 
         // ── UI factories ──────────────────────────────────────────────────────
@@ -603,8 +714,7 @@ namespace OOP.Presentation.Screens.Driver
         {
             var wrap = new Panel { Width = 44, Height = 46, BackColor = Color.Transparent };
             var dot = new Panel { Width = 24, Height = 24, BackColor = AppTheme.BorderLight, Location = new Point(10, 0) };
-            dot.Region = System.Drawing.Region.FromHrgn(
-                CreateRoundRectRgn(0, 0, 25, 25, 24, 24));
+            FormHelper.MakeRound(dot, 12);
             dot.Controls.Add(new Label
             {
                 Text = num,
@@ -656,8 +766,6 @@ namespace OOP.Presentation.Screens.Driver
             return btn;
         }
 
-        [System.Runtime.InteropServices.DllImport("gdi32.dll")]
-        private static extern IntPtr CreateRoundRectRgn(int nL, int nT, int nR, int nB, int nW, int nH);
 
         protected override void Dispose(bool disposing)
         {

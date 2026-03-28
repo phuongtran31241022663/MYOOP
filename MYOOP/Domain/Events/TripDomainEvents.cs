@@ -8,7 +8,7 @@ namespace OOP.Domain.Events
     {
         public Guid AggregateId { get; }
         public DateTime OccurredAt { get; }
-        
+
         protected DomainEvent(Guid aggregateId)
         {
             AggregateId = aggregateId;
@@ -19,11 +19,11 @@ namespace OOP.Domain.Events
     public class TripRequestedEvent : DomainEvent
     {
         public Guid PassengerId { get; }
-        public GeoLocation PickupLocation { get; }
-        public GeoLocation DestinationLocation { get; }
+        public GeoLocation Pickup { get; }
+        public GeoLocation Destination { get; }
         public VehicleType VehicleType { get; }
-        public double EstimatedDistance { get; }
-        public decimal EstimatedFare { get; }
+        public double Distance { get; }
+        public decimal Fare { get; }
 
         public TripRequestedEvent(
             Guid tripId,
@@ -31,15 +31,15 @@ namespace OOP.Domain.Events
             GeoLocation pickup,
             GeoLocation destination,
             VehicleType vehicleType,
-            double estimatedDistance,
-            decimal estimatedFare) : base(tripId)
+            double distance,
+            decimal fare) : base(tripId)
         {
             PassengerId = passengerId;
-            PickupLocation = pickup;
-            DestinationLocation = destination;
+            Pickup = pickup;
+            Destination = destination;
             VehicleType = vehicleType;
-            EstimatedDistance = estimatedDistance;
-            EstimatedFare = estimatedFare;
+            Distance = distance;
+            Fare = fare;
         }
     }
 
@@ -128,7 +128,7 @@ namespace OOP.Domain.Events
     {
         public DriverStatus NewStatus { get; }
         public DriverStatus OldStatus { get; }
-        
+
         public DriverStatusChangedEvent(Guid driverId, DriverStatus oldStatus, DriverStatus newStatus) : base(driverId)
         {
             OldStatus = oldStatus;

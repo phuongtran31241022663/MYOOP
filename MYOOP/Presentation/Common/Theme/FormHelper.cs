@@ -11,8 +11,8 @@ namespace OOP.Presentation
         /// <summary>Thiết lập chuẩn cho Form: kích thước, vị trí, khả năng co giãn.</summary>
         public static void ApplyFormStandard(Form form, bool allowMaximize = true)
         {
-            form.Size = AppTheme.DefaultFormSize;
-            form.MinimumSize = AppTheme.MinFormSize;
+            form.Size = AppTheme.StandardSize;
+            form.MinimumSize = AppTheme.StandardMinSize;
             form.StartPosition = FormStartPosition.CenterScreen;
             form.BackColor = AppTheme.PageBg;
             form.MaximizeBox = allowMaximize;
@@ -393,6 +393,90 @@ namespace OOP.Presentation
             };
         }
 
+        // ── Stat card ─────────────────────────────────────────────────────────
+
+        /// <summary>Stat card cho admin dashboard (icon + title + value + accent bar).</summary>
+        public static Label MakeStatCard(TableLayoutPanel layout, int col,
+            string icon, string title, Color accent)
+        {
+            var card = new Panel
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(6),
+                BackColor = AppTheme.CardBg,
+                Padding = new Padding(12),
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            var lblIcon = new Label { Text = icon, Font = new Font("Segoe UI", 14f), Location = new Point(12, 10), AutoSize = true };
+            var lblTitle = new Label { Text = title, Font = new Font("Segoe UI", 8.5f), ForeColor = AppTheme.TextMuted, Location = new Point(44, 12), AutoSize = true };
+            var lblValue = new Label { Text = "--", Font = new Font("Segoe UI", 22f, FontStyle.Bold), ForeColor = accent, Location = new Point(12, 36), AutoSize = true };
+            var accentBar = new Panel { Dock = DockStyle.Bottom, Height = 3, BackColor = accent };
+            card.Controls.Add(accentBar);
+            card.Controls.Add(lblValue);
+            card.Controls.Add(lblTitle);
+            card.Controls.Add(lblIcon);
+            layout.Controls.Add(card, col, 0);
+            return lblValue;
+        }
+
+        // ── Search panel ──────────────────────────────────────────────────────
+
+        /// <summary>Panel tìm kiếm chuẩn (Dock=Top, CardBg, TextBox fill).</summary>
+        public static Panel MakeSearchPanel(out TextBox txt, string placeholder)
+        {
+            var panel = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 42,
+                BackColor = AppTheme.CardBg,
+                Padding = new Padding(8, 5, 8, 5)
+            };
+            txt = new TextBox
+            {
+                Dock = DockStyle.Fill,
+                Font = new Font("Segoe UI", 10),
+                PlaceholderText = placeholder
+            };
+            panel.Controls.Add(txt);
+            return panel;
+        }
+
+        // ── Strip label ──────────────────────────────────────────────────────
+
+        /// <summary>Label cho summary strip (đồng bộ giữa Passenger/Driver history, admin).</summary>
+        public static Label MakeStripLabel(string text) => new()
+        {
+            Text = text,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+            ForeColor = AppTheme.TextPrimary,
+            BackColor = Color.Transparent
+        };
+
+        // ── Navigation ───────────────────────────────────────────────────────
+
+        /// <summary>Button điều hướng bottom nav (icon + label, TableLayoutPanel).</summary>
+        public static Button MakeNavButton(string icon, string label,
+            Color? backColor = null, Color? foreColor = null)
+        {
+            var btn = new Button
+            {
+                Text = $"{icon}\n{label}",
+                Dock = DockStyle.Fill,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = backColor ?? Color.White,
+                ForeColor = foreColor ?? AppTheme.TextMuted,
+                Font = new Font("Segoe UI", 8.5f),
+                Cursor = Cursors.Hand,
+                Margin = Padding.Empty
+            };
+            btn.FlatAppearance.BorderSize = 0;
+            btn.MouseEnter += (_, _) => btn.BackColor = AppTheme.SidebarHover;
+            btn.MouseLeave += (_, _) => btn.BackColor = backColor ?? Color.White;
+            return btn;
+        }
+
         // ── Status indicator ──────────────────────────────────────────────────
 
         /// <summary>
@@ -431,6 +515,38 @@ namespace OOP.Presentation
             label.Text = text;
             label.ForeColor = color;
             panel.Visible = true;
+        }
+
+        // ── Interaction helpers ───────────────────────────────────────────────
+
+        /// <summary>Hiển thị lỗi chuẩn hoá toàn hệ thống.</summary>
+        public static void ShowError(string message, string title = "Lỗi")
+        {
+            MessageBox.Show(message, title, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+
+        /// <summary>Hiển thị thông báo thành công chuẩn hoá.</summary>
+        public static void ShowSuccess(string message, string title = "Thành công")
+        {
+            MessageBox.Show(message, title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        /// <summary>Hộp thoại xác nhận Yes/No chuẩn hoá. Trả về true nếu Yes.</summary>
+        public static bool ShowConfirm(string message, string title = "Xác nhận")
+        {
+            return MessageBox.Show(message, title,
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+        }
+
+        /// <summary>Đặt trạng thái loading cho button (text + cursor + enabled).</summary>
+        public static void SetLoading(Button btn, bool loading,
+            string loadingText, string normalText,
+            Button? secondaryBtn = null)
+        {
+            btn.Enabled = !loading;
+            btn.Text = loading ? loadingText : normalText;
+            if (secondaryBtn != null) secondaryBtn.Enabled = !loading;
+            btn.Cursor = loading ? Cursors.Default : Cursors.Hand;
         }
     }
 }

@@ -1,5 +1,5 @@
-﻿using OOP.Domain.Enums;
-using System.Runtime.Serialization;
+﻿using System.Runtime.Serialization;
+using OOP.Domain.Enums;
 
 namespace OOP.Domain.Entities
 {
@@ -11,71 +11,69 @@ namespace OOP.Domain.Entities
         #region Properties
         [DataMember] public Guid Id { get; private set; }
 
-        private Guid _driverId;
+        private Guid driverId;
         [DataMember]
         public Guid DriverId
         {
-            get => _driverId;
-            private set => _driverId = value == Guid.Empty
+            get => driverId;
+            private set => driverId = value == Guid.Empty
                 ? throw new ArgumentException("Xe phải thuộc về tài xế hợp lệ.")
                 : value;
         }
 
-        private string _plateNumber = string.Empty;
+        private string plateNumber = string.Empty;
         [DataMember]
         public string PlateNumber
         {
-            get => _plateNumber;
-            private set => _plateNumber = string.IsNullOrWhiteSpace(value)
+            get => plateNumber;
+            private set => plateNumber = string.IsNullOrWhiteSpace(value)
                 ? throw new ArgumentException("Biển số xe không được để trống.")
-                : value.Length < 7
-                    ? throw new ArgumentException("Biển số xe không đúng định dạng.")
-                    : value.Trim();
+                : value.Trim();
         }
 
-        [DataMember] public VehicleType Type { get; private set; }
-
-        private string _brand = string.Empty;
+        private string brand = string.Empty;
         [DataMember]
         public string Brand
         {
-            get => _brand;
-            private set => _brand = string.IsNullOrWhiteSpace(value)
+            get => brand;
+            private set => brand = string.IsNullOrWhiteSpace(value)
                 ? throw new ArgumentException("Hãng xe không được để trống.")
                 : value.Trim();
         }
 
-        private string _model = string.Empty;
+        private string model = string.Empty;
         [DataMember]
         public string Model
         {
-            get => _model;
-            private set => _model = string.IsNullOrWhiteSpace(value)
+            get => model;
+            private set => model = string.IsNullOrWhiteSpace(value)
                 ? throw new ArgumentException("Mẫu xe không được để trống.")
                 : value.Trim();
         }
 
-        private string _color = string.Empty;
+        private string color = string.Empty;
         [DataMember]
         public string Color
         {
-            get => _color;
-            private set => _color = string.IsNullOrWhiteSpace(value)
+            get => color;
+            private set => color = string.IsNullOrWhiteSpace(value)
                 ? throw new ArgumentException("Màu xe không được để trống.")
                 : value.Trim();
         }
 
-        private int _capacity;
+        private int capacity;
         [DataMember]
         public int Capacity
         {
-            get => _capacity;
-            protected set => _capacity = value <= 0
+            get => capacity;
+            protected set => capacity = value <= 0
                 ? throw new ArgumentException("Sức chứa không hợp lệ.")
                 : value;
         }
-
-        public abstract double GetAverageSpeed(); // km/h
+        public abstract VehicleType GetVehicleType();
+        public abstract bool IsCar();
+        public abstract double GetMinSpeed(); // km/h
+        public abstract double GetMaxSpeed(); // km/h
         public abstract double GetMaxPickupDistance(); // km
         #endregion
         #region Constructors
@@ -83,7 +81,6 @@ namespace OOP.Domain.Entities
 
         protected Vehicle(
              Guid driverId,
-             VehicleType type,
              string plateNumber,
              string brand,
              string model,
@@ -91,9 +88,7 @@ namespace OOP.Domain.Entities
              int capacity)
         {
             Id = Guid.NewGuid();
-            // Properties will validate automatically via their setters
             DriverId = driverId;
-            Type = type;
             PlateNumber = plateNumber;
             Brand = brand;
             Model = model;
@@ -101,14 +96,13 @@ namespace OOP.Domain.Entities
             Capacity = capacity;
         }
         #endregion
-        public void UpdateVehicleInfo(
+        public virtual void UpdateVehicleInfo(
              string plateNumber,
              string brand,
              string model,
              string color,
              int capacity)
         {
-            // Properties will validate automatically via their setters
             PlateNumber = plateNumber;
             Brand = brand;
             Model = model;
@@ -117,7 +111,7 @@ namespace OOP.Domain.Entities
         }
 
         public override string ToString() =>
-            $"{Brand} {Model} | {PlateNumber} | {Capacity} chỗ | {Type}";
+            $"{Brand} {Model} | {PlateNumber} | {Capacity} chỗ | {GetVehicleType()}";
     }
 
     [DataContract]
@@ -127,10 +121,14 @@ namespace OOP.Domain.Entities
 
         public Motorbike(Guid driverId, string plateNumber,
                        string brand, string model, string color)
-          : base(driverId, VehicleType.Motorbike, plateNumber, brand, model, color, 2)
+          : base(driverId, plateNumber, brand, model, color, 2)
         { }
 
-        public override double GetAverageSpeed() => 35;
+        public override VehicleType GetVehicleType() => VehicleType.Motorbike;
+        public override bool IsCar() => false;
+
+        public override double GetMinSpeed() => 25; // km/h
+        public override double GetMaxSpeed() => 45; // km/h
         public override double GetMaxPickupDistance() => 5;
     }
 
@@ -140,11 +138,24 @@ namespace OOP.Domain.Entities
         protected Car() { }
 
         public Car(Guid driverId, string plateNumber,
-               string brand, string model, string color, int capacity)
-        : base(driverId, VehicleType.Car, plateNumber, brand, model, color, capacity)
-        { }
+           string brand, string model, string color, int capacity)
+           : base(driverId, plateNumber, brand, model, color, capacity)
+        {
+            if (capacity < 4)
+                throw new ArgumentException("Xe ô tô phải có ít nhất 4 chỗ ngồi.");
+        }
+        public override VehicleType GetVehicleType() => VehicleType.Car;
+        public override bool IsCar() => true;
 
-        public override double GetAverageSpeed() => 55;
+        public override double GetMinSpeed() => 40; // km/h
+        public override double GetMaxSpeed() => 70; // km/h
         public override double GetMaxPickupDistance() => 7;
+        public override void UpdateVehicleInfo(string plateNumber, string brand, string model, string color, int capacity)
+        {
+            if (capacity < 4)
+                throw new ArgumentException("Xe ô tô phải có ít nhất 4 chỗ ngồi.");
+
+            base.UpdateVehicleInfo(plateNumber, brand, model, color, capacity);
+        }
     }
 }

@@ -57,18 +57,17 @@ namespace OOP.Application.Services
             await _fareRuleRepo.Update(rule);
         }
 
-        public async Task DeactivateUser(Guid targetId, Guid adminId)
+        public async Task DeActivateAccountUser(Guid targetId, Guid adminId)
         {
             var user = await GetOrThrow(targetId);
 
-            // Chỉ Passenger và Driver mới có IsActive - Admin luôn active
             switch (user)
             {
                 case Passenger passenger:
-                    passenger.Deactivate(adminId);
+                    passenger.DeActivateAccount(adminId);
                     break;
                 case Driver driver:
-                    driver.Deactivate(adminId);
+                    driver.DeActivateAccount(adminId);
                     break;
                 case Admin:
                     throw new InvalidOperationException("Không thể khóa tài khoản admin.");
@@ -78,18 +77,17 @@ namespace OOP.Application.Services
 
             await _userRepo.Update(user);
         }
-        public async Task ActivateUser(Guid userId)
+        public async Task ActivateAccountUser(Guid userId)
         {
             var user = await GetOrThrow(userId);
 
-            // Chỉ Passenger và Driver mới có IsActive - Admin luôn active
             switch (user)
             {
                 case Passenger passenger:
-                    passenger.Activate();
+                    passenger.ActivateAccount();
                     break;
                 case Driver driver:
-                    driver.Activate();
+                    driver.ActivateAccount();
                     break;
                 case Admin:
                     throw new InvalidOperationException("Tài khoản admin đã luôn hoạt động.");

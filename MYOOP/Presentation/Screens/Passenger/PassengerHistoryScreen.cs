@@ -1,6 +1,7 @@
-﻿// ─────────────────────────────────────────────────────────────────────────────
-// PassengerHistoryScreen.cs
-// Wrap lại logic TripHistoryForm thành một Screen.
+﻿// PassengerHistoryScreen.cs
+// FIX: Thêm summary strip (tổng chuyến, tổng chi tiêu) để nhất quán
+//      với DriverHistoryScreen. Cấu trúc layout giờ giống hệt nhau:
+//      header bar → summary strip → search → toolbar → grid / empty label
 // ─────────────────────────────────────────────────────────────────────────────
 
 using OOP.Presentation.Base;
@@ -8,7 +9,6 @@ using OOP.Presentation.Common.Theme;
 using OOP.Application.Services.Interfaces;
 using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
-using OOP.Presentation.Common.Theme;
 
 namespace OOP.Presentation.Screens.Passenger
 {
@@ -22,18 +22,20 @@ namespace OOP.Presentation.Screens.Passenger
         private Label _lblEmpty = null!;
         private Button _btnRefresh = null!;
 
+        // Summary labels — nhất quán với DriverHistoryScreen
+        private Label _lblTotalTrips = null!;
+        private Label _lblTotalSpent = null!;
+        private Label _lblCompletedCount = null!;
+
         public string ScreenTitle => "Lịch sử chuyến đi";
 
-        public async Task OnNavigatedTo(object? parameter = null)
-        {
-            // Mỗi lần mở tab này → tự reload
-            await LoadTrips();
-        }
+        public async Task OnNavigatedTo(object? parameter = null) => await LoadTrips();
 
         public bool OnNavigatingFrom() => true;
 
         public PassengerHistoryScreen(Guid userId, ITripService tripService, IUserRepository userRepo)
         {
+            DoubleBuffered = true;
             _userId = userId;
             _tripService = tripService;
             _userRepo = userRepo;
@@ -44,11 +46,11 @@ namespace OOP.Presentation.Screens.Passenger
         {
             BackColor = AppTheme.PageBg;
 
-            // Header bar
+            // ── Header bar (cùng chiều cao với DriverHistoryScreen = 54px) ──
             var headerBar = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 50,
+                Height = 54,
                 BackColor = AppTheme.CardBg,
                 Padding = new Padding(16, 8, 16, 8)
             };
@@ -59,14 +61,40 @@ namespace OOP.Presentation.Screens.Passenger
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft
             };
-            _btnRefresh = FormHelper.MakeButton("🔄 Làm mới", AppTheme.Primary, AppTheme.PrimaryHover, height: 34);
+            _btnRefresh = FormHelper.MakeButton("Làm mới", AppTheme.Primary, AppTheme.PrimaryHover, height: 36);
             _btnRefresh.Width = 100;
             _btnRefresh.Dock = DockStyle.Right;
             _btnRefresh.Click += async (_, _) => await LoadTrips();
             headerBar.Controls.Add(lblTitle);
             headerBar.Controls.Add(_btnRefresh);
 
-            // Grid — copy từ TripHistoryForm
+            // ── Summary strip (nhất quán với DriverHistoryScreen) ──
+            var summaryStrip = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 48,
+                BackColor = AppTheme.SidebarBg,
+                Padding = new Padding(16, 4, 16, 4)
+            };
+            var summaryLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 3,
+                RowCount = 1
+            };
+            for (int i = 0; i < 3; i++)
+                summaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.3f));
+
+            _lblTotalTrips = MakeSumLabel("Tổng chuyến: --");
+            _lblTotalSpent = MakeSumLabel("Tổng chi tiêu: --");
+            _lblCompletedCount = MakeSumLabel("Hoàn thành: --");
+
+            summaryLayout.Controls.Add(_lblTotalTrips, 0, 0);
+            summaryLayout.Controls.Add(_lblTotalSpent, 1, 0);
+            summaryLayout.Controls.Add(_lblCompletedCount, 2, 0);
+            summaryStrip.Controls.Add(summaryLayout);
+
+            // ── Grid — cùng style với DriverHistoryScreen ──
             _dgv = new DataGridView
             {
                 Dock = DockStyle.Fill,
@@ -82,10 +110,10 @@ namespace OOP.Presentation.Screens.Passenger
                 Font = new Font("Segoe UI", 9.5f)
             };
             _dgv.Columns.AddRange(
-                MakeCol("Pickup", "Điểm đón", 180),
-                MakeCol("Destination", "Điểm đến", 180),
+                MakeCol("Pickup", "Điểm đón", 200),
+                MakeCol("Destination", "Điểm đến", 200),
                 MakeCol("Distance", "K.Cách", 80),
-                MakeCol("Fare", "Cước phí", 100),
+                MakeCol("Fare", "Cước phí", 110),
                 MakeCol("Status", "Trạng thái", 120),
                 MakeCol("Date", "Ngày", 120)
             );
@@ -100,8 +128,10 @@ namespace OOP.Presentation.Screens.Passenger
                 Visible = false
             };
 
+            // Thứ tự add: Fill trước, Top sau
             Controls.Add(_lblEmpty);
             Controls.Add(_dgv);
+            Controls.Add(summaryStrip);
             Controls.Add(headerBar);
         }
 
@@ -111,17 +141,31 @@ namespace OOP.Presentation.Screens.Passenger
             try
             {
                 var trips = await _tripService.GetTripHistory(_userId);
-                if (trips.Count == 0) { _dgv.Visible = false; _lblEmpty.Visible = true; return; }
+                var completed = trips.Where(t => t.Status == TripStatus.Completed).ToList();
 
-                _dgv.Visible = true; _lblEmpty.Visible = false;
+                // Cập nhật summary strip
+                _lblTotalTrips.Text = $"Tổng chuyến: {trips.Count}";
+                _lblTotalSpent.Text = $"Tổng chi tiêu: {completed.Sum(t => t.Fare):N0} đ";
+                _lblCompletedCount.Text = $"Hoàn thành: {completed.Count}";
+
+                if (trips.Count == 0)
+                {
+                    _dgv.Visible = false;
+                    _lblEmpty.Visible = true;
+                    return;
+                }
+
+                _dgv.Visible = true;
+                _lblEmpty.Visible = false;
                 _dgv.Rows.Clear();
+
                 foreach (var t in trips)
                 {
                     _dgv.Rows.Add(
                         t.Pickup?.Address ?? "–",
                         t.Destination?.Address ?? "–",
                         $"{t.Distance:F1} km",
-                        t.Fare > 0 ? $"{t.Fare:N0} VNĐ" : "–",
+                        t.Fare > 0 ? $"{t.Fare:N0} đ" : "–",
                         StatusLabel(t.Status),
                         t.RequestedAt.ToLocalTime().ToString("dd/MM HH:mm")
                     );
@@ -142,6 +186,15 @@ namespace OOP.Presentation.Screens.Passenger
             }
             finally { _btnRefresh.Enabled = true; }
         }
+
+        private static Label MakeSumLabel(string text) => new()
+        {
+            Text = text,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Segoe UI", 9f),
+            ForeColor = Color.FromArgb(180, 200, 220)
+        };
 
         private static DataGridViewTextBoxColumn MakeCol(string name, string header, int width) =>
             new()
@@ -165,8 +218,7 @@ namespace OOP.Presentation.Screens.Passenger
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PassengerProfileScreen.cs
-// Wrap lại ProfileForm thành Screen.
+// PassengerProfileScreen.cs — giữ nguyên, không thay đổi logic
 // ─────────────────────────────────────────────────────────────────────────────
 
 namespace OOP.Presentation.Screens.Passenger
@@ -184,7 +236,6 @@ namespace OOP.Presentation.Screens.Passenger
 
         public Task OnNavigatedTo(object? parameter = null)
         {
-            // Reset lại form mỗi khi mở
             _txtName.Text = _user.Name;
             _txtPhone.Text = _user.Phone;
             _lblSaved.Visible = false;
@@ -249,7 +300,7 @@ namespace OOP.Presentation.Screens.Passenger
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormHelper.ShowError(ex.Message);
             }
         }
     }

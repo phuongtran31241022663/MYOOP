@@ -1,4 +1,6 @@
 
+using OOP.Domain.Enums;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DriverProfileScreen.cs
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,7 +58,7 @@ namespace OOP.Presentation.Screens.Driver
             Padding = new Padding(20);
 
             // Profile card
-            var cardProfile = FormHelper.MakeCard(380, 230);
+            var cardProfile = FormHelper.MakeCard(380, 260);
             cardProfile.Location = new Point(20, 20);
             AddCardTitle(cardProfile, "Thông tin cá nhân", new Point(20, 14));
 
@@ -87,7 +89,7 @@ namespace OOP.Presentation.Screens.Driver
             Controls.Add(cardProfile);
 
             // Vehicle + stats card
-            var cardVehicle = FormHelper.MakeCard(380, 220);
+            var cardVehicle = FormHelper.MakeCard(380, 280);
             cardVehicle.Location = new Point(420, 20);
             AddCardTitle(cardVehicle, "Thông tin xe & Ví", new Point(20, 14));
 
@@ -115,7 +117,7 @@ namespace OOP.Presentation.Screens.Driver
             cardVehicle.Controls.Add(_btnTopUp);
             
             vy += 36;
-            _lblRating = MakeInfoRow(cardVehicle, "Đánh giá TB", vy); vy += 36;
+            _lblRating = MakeInfoRow(cardVehicle, "Đánh giá", vy); vy += 36;
             
             // Cập nhật xe button
             _btnUpdateVehicle = new Button
@@ -140,7 +142,7 @@ namespace OOP.Presentation.Screens.Driver
         private void RefreshVehicleInfo()
         {
             var v = _driver.Vehicle;
-            _lblVehicleType.Text = v?.GetVehicleType() ?? "N/A";
+            _lblVehicleType.Text = v != null ? (v.GetVehicleType() == VehicleType.Motorbike ? "Xe máy" : "Ô tô") : "N/A";
             _lblPlate.Text = v?.PlateNumber ?? "N/A";
             _lblBrand.Text = v != null ? $"{v.Brand} {v.Model} – {v.Color}" : "N/A";
             _lblWallet.Text = $"{_driver.Wallet:N0} VNĐ";
@@ -208,22 +210,63 @@ namespace OOP.Presentation.Screens.Driver
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormHelper.ShowError(ex.Message);
             }
         }
 
         private async void OnTopUp(object? sender, EventArgs e)
         {
-            var input = Microsoft.VisualBasic.Interaction.InputBox(
-                "Nhập số tiền cần nạp (VNĐ):",
-                "Nạp tiền vào ví",
-                "100000");
-
-            if (string.IsNullOrWhiteSpace(input)) return;
-
-            if (!decimal.TryParse(input, out var amount) || amount <= 0)
+            using var form = new Form
             {
-                MessageBox.Show("Số tiền không hợp lệ.", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                Text = "Nạp tiền vào ví",
+                Width = 360,
+                Height = 190,
+                StartPosition = FormStartPosition.CenterParent,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                BackColor = AppTheme.PageBg
+            };
+
+            var lbl = new Label
+            {
+                Text = "Nhập số tiền cần nạp (VNĐ):",
+                Location = new Point(20, 18),
+                Width = 300
+            };
+
+            var numAmount = new NumericUpDown
+            {
+                Location = new Point(20, 44),
+                Width = 300,
+                Minimum = 10000,
+                Maximum = 10000000,
+                Increment = 10000,
+                ThousandsSeparator = true,
+                DecimalPlaces = 0,
+                Value = 100000
+            };
+
+            var btnOk = FormHelper.MakeButton("Nạp", AppTheme.Success, AppTheme.SuccessHover, height: 32);
+            btnOk.Width = 90;
+            btnOk.Location = new Point(140, 92);
+            btnOk.DialogResult = DialogResult.OK;
+
+            var btnCancel = FormHelper.MakeOutlineButton("Hủy", 32);
+            btnCancel.Width = 90;
+            btnCancel.Location = new Point(240, 92);
+            btnCancel.DialogResult = DialogResult.Cancel;
+
+            form.Controls.AddRange(new Control[] { lbl, numAmount, btnOk, btnCancel });
+            form.AcceptButton = btnOk;
+            form.CancelButton = btnCancel;
+
+            if (form.ShowDialog() != DialogResult.OK) return;
+
+            var amount = numAmount.Value;
+            if (amount <= 0)
+            {
+                FormHelper.ShowError("Số tiền không hợp lệ.", "Lỗi");
                 return;
             }
 
@@ -231,11 +274,11 @@ namespace OOP.Presentation.Screens.Driver
             {
                 await _userService.TopUpDriverWallet(_driver.Id, amount);
                 await RefreshDriverFromService();
-                MessageBox.Show($"Đã nạp {amount:N0} VNĐ vào ví!", "Thành công", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                FormHelper.ShowSuccess($"Đã nạp {amount:N0} VNĐ vào ví!");
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormHelper.ShowError(ex.Message);
             }
         }
 
@@ -267,9 +310,8 @@ namespace OOP.Presentation.Screens.Driver
                 Width = 250,
                 DropDownStyle = ComboBoxStyle.DropDownList
             };
-            cmbType.Items.AddRange(new[] { "Motorbike", "Car" });
+            cmbType.Items.AddRange(new[] { "Xe máy", "Ô tô" });
             cmbType.SelectedItem = v.GetVehicleType();
-            if (cmbType.SelectedItem == null) cmbType.SelectedIndex = 0;
 
             var lblPlate = new Label { Text = "Biển số:", Location = new Point(20, 60), Width = 80 };
             var txtPlate = new TextBox { Location = new Point(110, 58), Width = 250, Text = v.PlateNumber };
@@ -294,9 +336,12 @@ namespace OOP.Presentation.Screens.Driver
                 Height = 32,
                 BackColor = AppTheme.Success,
                 ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold)
             };
             btnSave.FlatAppearance.BorderSize = 0;
+            FormHelper.AttachHover(btnSave, AppTheme.Success, AppTheme.SuccessHover);
 
             var btnCancel = new Button
             {
@@ -304,11 +349,13 @@ namespace OOP.Presentation.Screens.Driver
                 Location = new Point(290, 250),
                 Width = 80,
                 Height = 32,
-                BackColor = AppTheme.Danger,
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.White,
+                ForeColor = AppTheme.TextMuted,
+                Cursor = Cursors.Hand
             };
-            btnCancel.FlatAppearance.BorderSize = 0;
+            btnCancel.FlatAppearance.BorderSize = 1;
+            btnCancel.FlatAppearance.BorderColor = AppTheme.BorderLight;
 
             form.Height = 320;
             form.Controls.AddRange(new Control[] { lblType, cmbType, lblPlate, txtPlate, lblBrand, txtBrand, lblModel, txtModel, lblColor, txtColor, lblCap, numCap, btnSave, btnCancel });
@@ -317,7 +364,12 @@ namespace OOP.Presentation.Screens.Driver
             {
                 try
                 {
-                    string vehicleType = cmbType.SelectedItem?.ToString() ?? "Motorbike";
+                    string vehicleType = (string)(cmbType.SelectedItem ?? "Xe máy") switch
+                    {
+                        "Xe máy" => "Motorbike",
+                        "Ô tô" => "Car",
+                        _ => "Motorbike"
+                    };
                     await _userService.UpdateDriverVehicleInfo(
                         _driver.Id,
                         vehicleType,
@@ -332,7 +384,7 @@ namespace OOP.Presentation.Screens.Driver
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    FormHelper.ShowError(ex.Message);
                 }
             };
 
@@ -349,7 +401,7 @@ namespace OOP.Presentation.Screens.Driver
         {
             var refreshed = await _userService.GetUserProfile(_driver.Id) as OOP.Domain.Entities.Driver;
             if (refreshed != null)
-                _driver.SyncFrom(refreshed);
+                _driver.RestoreFromSnapshot(refreshed);
 
             RefreshVehicleInfo();
         }

@@ -39,10 +39,6 @@ namespace OOP.Presentation
         private void InitForm()
         {
             Text = "Đăng nhập";
-            StartPosition = FormStartPosition.CenterScreen;
-            Size = new Size(980, 650);
-            MinimumSize = new Size(760, 560);
-            BackColor = AppTheme.CardBg;
             Font = new Font("Segoe UI", 10.5f);
             _errorProvider = new ErrorProvider
             {
@@ -303,8 +299,7 @@ namespace OOP.Presentation
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine(ex.ToString());
-                MessageBox.Show($"Lỗi hệ thống: {ex.Message}", "Lỗi",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormHelper.ShowError($"Lỗi hệ thống: {ex.Message}");
             }
             finally
             {
@@ -314,10 +309,7 @@ namespace OOP.Presentation
 
         private void SetLoading(bool loading)
         {
-            _btnLogin.Enabled = !loading;
-            _btnLogin.Text = loading ? "Đang đăng nhập..." : "Đăng nhập";
-            _btnBack.Enabled = !loading;
-            Cursor = loading ? Cursors.WaitCursor : Cursors.Default;
+            FormHelper.SetLoading(_btnLogin, loading, "Đang đăng nhập...", "Đăng nhập", _btnBack);
         }
 
         private void CenterCard(Control card) =>

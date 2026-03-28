@@ -30,7 +30,7 @@ public interface IUserService
     Task UpdateDriverStatus(Guid driverId, DriverStatus status);
 
     /// <summary>
-    /// Force recover driver status to Active. Bypasses domain rules.
+    /// Force recover driver status to Active (bypass status transition guard).
     /// Used for recovery from stale OnTrip state when trips are unexpectedly ended.
     /// </summary>
     Task ForceRecoverDriverStatus(Guid driverId);

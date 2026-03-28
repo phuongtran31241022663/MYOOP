@@ -1,4 +1,4 @@
-﻿﻿using System.Runtime.Serialization;
+﻿using System.Runtime.Serialization;
 
 namespace OOP.Domain.Entities
 {
@@ -13,7 +13,6 @@ namespace OOP.Domain.Entities
             string password)
             : base(id, name, phone, password)
         {
-            // Admin luôn active - không cần IsActive property
         }
 
         public override string GetInfo()

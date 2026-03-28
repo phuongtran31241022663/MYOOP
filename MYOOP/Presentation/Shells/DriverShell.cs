@@ -10,24 +10,16 @@ using OOP.Presentation.Screens.Driver;
 namespace OOP.Presentation
 {
     /// <summary>
-    /// Shell duy nhất cho Driver — thay thế DriverDashboardForm.
+    /// Shell duy nhất cho Driver.
     ///
-    /// Layout:
-    ///   ┌─────────────────────────────────────────────┐
-    ///   │  Header (tên + status pill + toggle online) │
-    ///   ├─────────────────────────────────────────────┤
-    ///   │                                             │
-    ///   │           Content Area (screens)            │
-    ///   │                                             │
-    ///   ├─────────────────────────────────────────────┤
-    ///   │   Dashboard | Bản đồ | Lịch sử | Cá nhân   │
-    ///   └─────────────────────────────────────────────┘
-    ///
-    /// Khác với PassengerShell:
-    /// - Notification (accept/reject request) hiện ngay trong DashboardScreen
-    /// - Khi accept → Shell.OnTripAccepted() chuyển sang MapTripScreen
-    /// - Poll timer cũng do Shell quản lý
-    /// </summary>
+        /// Layout chuẩn:
+        ///   ┌─────────────────────────────────────────────┐
+        ///   │  Header (Top, 56px): tên + status toggle     │
+        ///   ├──────────────┬──────────────────────────────┤
+        ///   │  Sidebar     │          Content              │
+        ///   │  (200px)     │          (Fill)               │
+        ///   └──────────────┴──────────────────────────────┘
+        /// </summary>
     public class DriverShell : BaseDashboardForm
     {
         // ── Dependencies ──────────────────────────────────────────────────────
@@ -51,10 +43,11 @@ namespace OOP.Presentation
 
         // ── Header controls ───────────────────────────────────────────────────
         private Label _lblTitle = null!;
-        private Panel _pnlOnlineToggle = null!;
-        private Label _lblOnlineStatus = null!;
+        private Panel _pnlActiveToggle = null!;
+        private Label _lblActiveStatus = null!;
+        private Button _btnLogout = null!;
 
-        // ── Bottom nav ────────────────────────────────────────────────────────
+        // ── Sidebar nav buttons ───────────────────────────────────────────────
         private Button _btnNavDashboard = null!;
         private Button _btnNavMap = null!;
         private Button _btnNavHistory = null!;
@@ -62,10 +55,12 @@ namespace OOP.Presentation
 
         // ── Shared state ──────────────────────────────────────────────────────
         public Trip? CurrentTrip { get; private set; }
-        private bool _onlineToggleState = false;
+        private bool _activeToggleState = false;
 
         private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 3000 };
         private readonly HashSet<Guid> _notifiedTripIds = new();
+        private readonly HashSet<string> _recentNotifications = new();
+        private DateTime _lastNotificationTime = DateTime.MinValue;
 
         // ── Screen keys ───────────────────────────────────────────────────────
         public const string KEY_DASHBOARD = "dashboard";
@@ -94,8 +89,7 @@ namespace OOP.Presentation
             _fareService = fareService;
 
             Text = $"TX – {Driver.Name}";
-            Size = new Size(1060, 700);
-            MinimumSize = new Size(820, 560);
+            MaximizeBox = true;
 
             BuildShell();
             WireUpEvents();
@@ -105,21 +99,9 @@ namespace OOP.Presentation
 
         private void BuildShell()
         {
-            var header = BuildHeader();
-
-            var contentHost = new Panel
-            {
-                Dock = DockStyle.Fill,
-                BackColor = AppTheme.PageBg
-            };
-
-            var bottomNav = BuildBottomNav();
-
-            Controls.Add(contentHost);
-            Controls.Add(bottomNav);
-            Controls.Add(header);
-
-            Nav = new ScreenNavigator(contentHost);
+            BuildHeader();
+            Nav = new ScreenNavigator(ContentPanel);
+            BuildSidebar();
 
             _dashboardScreen = new DriverDashboardScreen(this, _tripService, _userService, _simulationService);
             _activeTripScreen = new DriverActiveTripScreen(this, _tripService, _routeService, _userService, _simulationService, _fareService);
@@ -134,104 +116,84 @@ namespace OOP.Presentation
             Nav.ScreenChanged += OnScreenChanged;
         }
 
-        private Panel BuildHeader()
+        private void BuildHeader()
         {
-            var header = new Panel
+            HeaderPanel.Padding = new Padding(16, 0, 16, 0);
+
+            var layout = new TableLayoutPanel
             {
-                Dock = DockStyle.Top,
-                Height = 58,
-                BackColor = AppTheme.SidebarDark,
-                Padding = new Padding(16, 0, 16, 0)
+                Dock = DockStyle.Fill,
+                ColumnCount = 3,
+                RowCount = 1
             };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
 
             _lblTitle = new Label
             {
                 Text = Driver.Name,
-                Font = new Font("Segoe UI", 12f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 13f, FontStyle.Bold),
                 ForeColor = Color.White,
-                Dock = DockStyle.Left,
-                Width = 200,
+                Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft
             };
 
-            // Toggle Online/Inactive
-            _pnlOnlineToggle = new Panel
+            _pnlActiveToggle = new Panel
             {
-                Width = 120,
-                Dock = DockStyle.Right,
+                Dock = DockStyle.Fill,
                 Cursor = Cursors.Hand
             };
-            _lblOnlineStatus = new Label
+            _lblActiveStatus = new Label
             {
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
             };
-            _pnlOnlineToggle.Controls.Add(_lblOnlineStatus);
-            _pnlOnlineToggle.Click += async (_, _) => await ToggleOnline();
-            _lblOnlineStatus.Click += async (_, _) => await ToggleOnline();
+            _pnlActiveToggle.Controls.Add(_lblActiveStatus);
+            _pnlActiveToggle.Click += async (_, _) => await ToggleActive();
+            _lblActiveStatus.Click += async (_, _) => await ToggleActive();
 
-            header.Controls.Add(_pnlOnlineToggle);
-            header.Controls.Add(_lblTitle);
-            return header;
-        }
-
-        private Panel BuildBottomNav()
-        {
-            var nav = new Panel
+            _btnLogout = new Button
             {
-                Dock = DockStyle.Bottom,
-                Height = 62,
-                BackColor = AppTheme.SidebarBg
-            };
-            nav.Paint += (s, e) =>
-            {
-                using var pen = new Pen(AppTheme.SidebarHover);
-                e.Graphics.DrawLine(pen, 0, 0, nav.Width, 0);
-            };
-
-            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1 };
-            for (int i = 0; i < 4; i++)
-                layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-
-            _btnNavDashboard = MakeNavButton("🏠", "Bảng điều khiển");
-            _btnNavMap = MakeNavButton("🗺️", "Bản đồ");
-            _btnNavHistory = MakeNavButton("📋", "Lịch sử");
-            _btnNavProfile = MakeNavButton("👤", "Cá nhân");
-
-            _btnNavDashboard.Click += async (_, _) => await Nav.NavigateTo(KEY_DASHBOARD);
-            _btnNavMap.Click += async (_, _) => await Nav.NavigateTo(KEY_MAP);
-            _btnNavHistory.Click += async (_, _) => await Nav.NavigateTo(KEY_HISTORY);
-            _btnNavProfile.Click += async (_, _) => await Nav.NavigateTo(KEY_PROFILE);
-
-            layout.Controls.Add(_btnNavDashboard, 0, 0);
-            layout.Controls.Add(_btnNavMap, 1, 0);
-            layout.Controls.Add(_btnNavHistory, 2, 0);
-            layout.Controls.Add(_btnNavProfile, 3, 0);
-            nav.Controls.Add(layout);
-            return nav;
-        }
-
-        private static Button MakeNavButton(string icon, string label)
-        {
-            var btn = new Button
-            {
-                Text = $"{icon}\n{label}",
-                FlatStyle = FlatStyle.Flat,
+                Text = "← Đăng xuất",
                 Dock = DockStyle.Fill,
-                Font = new Font("Segoe UI", 7.5f),
-                ForeColor = Color.FromArgb(160, 180, 210),
-                BackColor = Color.Transparent,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = AppTheme.Danger,
+                ForeColor = Color.White,
                 Cursor = Cursors.Hand,
-                TextAlign = ContentAlignment.MiddleCenter
+                Font = new Font("Segoe UI", 8.5f, FontStyle.Bold)
             };
-            btn.FlatAppearance.BorderSize = 0;
-            btn.MouseEnter += (_, _) => btn.BackColor = AppTheme.SidebarHover;
-            btn.MouseLeave += (_, _) => btn.BackColor = Color.Transparent;
-            return btn;
+            _btnLogout.FlatAppearance.BorderSize = 0;
+            _btnLogout.Click += OnLogoutClicked;
+
+            layout.Controls.Add(_lblTitle, 0, 0);
+            layout.Controls.Add(_pnlActiveToggle, 1, 0);
+            layout.Controls.Add(_btnLogout, 2, 0);
+            HeaderPanel.Controls.Add(layout);
+        }
+
+        private void BuildSidebar()
+        {
+            _btnNavDashboard = AddSidebarNav("🏠", "Bảng điều khiển", async (_, _) => await Nav.NavigateTo(KEY_DASHBOARD));
+            _btnNavMap = AddSidebarNav("🗺️", "Bản đồ / Chuyến đi", async (_, _) => await Nav.NavigateTo(KEY_MAP));
+            _btnNavHistory = AddSidebarNav("📋", "Lịch sử", async (_, _) => await Nav.NavigateTo(KEY_HISTORY));
+            _btnNavProfile = AddSidebarNav("👤", "Cá nhân", async (_, _) => await Nav.NavigateTo(KEY_PROFILE));
         }
 
         // ── Events ────────────────────────────────────────────────────────────
+
+        private void OnLogoutClicked(object? sender, EventArgs e)
+        {
+            if (CurrentTrip != null)
+            {
+                MessageBox.Show("Bạn đang có chuyến đi. Vui lòng hoàn thành trước.",
+                    "Không thể đăng xuất", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (FormHelper.ShowConfirm("Bạn có chắc muốn đăng xuất?"))
+                Close();
+        }
 
         private void WireUpEvents()
         {
@@ -240,11 +202,9 @@ namespace OOP.Presentation
 
             Load += async (_, _) =>
             {
-                _onlineToggleState = Driver.Status != DriverStatus.Inactive;
-                UpdateOnlineToggleUI();
+                _activeToggleState = Driver.Status != DriverStatus.Offline;
+                UpdateActiveToggleUI();
                 await Nav.NavigateTo(KEY_DASHBOARD);
-
-                // Restore nếu có chuyến dở
                 await RestoreActiveTrip();
 
                 _refreshTimer.Tick += async (_, _) => await RefreshDashboard();
@@ -255,14 +215,12 @@ namespace OOP.Presentation
             {
                 if (CurrentTrip != null)
                 {
-                    MessageBox.Show("Bạn đang có chuyến đi. Vui lòng hoàn thành trước.",
-                        "Không thể đóng", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    FormHelper.ShowError("Bạn đang có chuyến đi. Vui lòng hoàn thành trước.", "Không thể đóng");
                     e.Cancel = true;
                     return;
                 }
-
                 _refreshTimer.Stop();
-                await SetInactiveOnExit();
+                await SetOfflineOnExit();
             };
 
             FormClosed += (_, _) =>
@@ -275,6 +233,14 @@ namespace OOP.Presentation
         private void OnTripNotified(Guid tripId, string msg)
         {
             if (InvokeRequired) { BeginInvoke(() => OnTripNotified(tripId, msg)); return; }
+
+            var key = $"trip_{tripId}_{msg.GetHashCode()}";
+            var now = DateTime.Now;
+            if (_recentNotifications.Contains(key) && (now - _lastNotificationTime).TotalMilliseconds < 500) return;
+            _recentNotifications.Add(key);
+            _lastNotificationTime = now;
+            if (_recentNotifications.Count > 100) _recentNotifications.Clear();
+
             _dashboardScreen.AddLog($"[{DateTime.Now:HH:mm}] {msg}");
         }
 
@@ -282,80 +248,79 @@ namespace OOP.Presentation
         {
             if (driverId != Driver.Id) return;
             if (InvokeRequired) { BeginInvoke(() => OnDriverNotified(driverId, msg)); return; }
+
+            var key = $"driver_{driverId}_{msg.GetHashCode()}";
+            var now = DateTime.Now;
+            if (_recentNotifications.Contains(key) && (now - _lastNotificationTime).TotalMilliseconds < 500) return;
+            _recentNotifications.Add(key);
+            _lastNotificationTime = now;
+            if (_recentNotifications.Count > 100) _recentNotifications.Clear();
+
             _dashboardScreen.AddLog($"[{DateTime.Now:HH:mm}] {msg}");
         }
 
         private void OnScreenChanged(string key)
         {
-            Color active = Color.White;
-            Color inactive = Color.FromArgb(160, 180, 210);
-            _btnNavDashboard.ForeColor = key == KEY_DASHBOARD ? active : inactive;
-            _btnNavMap.ForeColor = key == KEY_MAP ? active : inactive;
-            _btnNavHistory.ForeColor = key == KEY_HISTORY ? active : inactive;
-            _btnNavProfile.ForeColor = key == KEY_PROFILE ? active : inactive;
+            var activeBtn = key switch
+            {
+                KEY_DASHBOARD => _btnNavDashboard,
+                KEY_MAP => _btnNavMap,
+                KEY_HISTORY => _btnNavHistory,
+                KEY_PROFILE => _btnNavProfile,
+                _ => null
+            };
+            if (activeBtn != null) SetActiveNav(activeBtn);
         }
 
-        // ── Shared state API ─────────────────────────────────────────────────
+        // ── Shared state API ──────────────────────────────────────────────────
 
-        /// <summary>
-        /// DashboardScreen gọi sau khi tài xế accept chuyến.
-        /// Shell chuyển sang MapTripScreen.
-        /// </summary>
         public async Task OnTripAccepted(Trip trip)
         {
             SetCurrentTrip(trip);
             await Nav.NavigateTo(KEY_MAP, trip);
-            _btnNavMap.Text = "🗺️\nBản đồ ●";
-            _btnNavMap.ForeColor = AppTheme.Success;
+            _btnNavMap.Text = "🗺️  Bản đồ / Chuyến đi  ●";
         }
 
-        /// <summary>Gọi khi chuyến hoàn thành hoặc hủy.</summary>
         public void OnTripEnded()
         {
             SetCurrentTrip(null);
-            _btnNavMap.Text = "🗺️\nBản đồ";
+            _btnNavMap.Text = "🗺️  Bản đồ / Chuyến đi";
         }
 
         public void SetCurrentTrip(Trip? trip) => CurrentTrip = trip;
 
-        // ── Online toggle ─────────────────────────────────────────────────────
-
-        private async Task ToggleOnline()
+        private async Task ToggleActive()
         {
-            _onlineToggleState = !_onlineToggleState;
-            UpdateOnlineToggleUI();
-
+            _activeToggleState = !_activeToggleState;
+            UpdateActiveToggleUI();
             try
             {
-                var newStatus = _onlineToggleState ? DriverStatus.Active : DriverStatus.Inactive;
+                var newStatus = _activeToggleState ? DriverStatus.Available : DriverStatus.Offline;
                 await _userService.UpdateDriverStatus(Driver.Id, newStatus);
-                if (newStatus == DriverStatus.Active)
-                    Driver.SetActive();
-                else
-                    Driver.SetInactive();
+                if (newStatus == DriverStatus.Available) Driver.SetAvailable();
+                else Driver.SetOffline();
             }
             catch (Exception ex)
             {
-                _onlineToggleState = !_onlineToggleState; // rollback
-                UpdateOnlineToggleUI();
-                MessageBox.Show($"Không thể đổi trạng thái: {ex.Message}", "Lỗi",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                _activeToggleState = !_activeToggleState; // rollback
+                UpdateActiveToggleUI();
+                FormHelper.ShowError($"Không thể đổi trạng thái: {ex.Message}");
             }
         }
 
-        private void UpdateOnlineToggleUI()
+        private void UpdateActiveToggleUI()
         {
-            if (_onlineToggleState)
+            if (_activeToggleState)
             {
-                _pnlOnlineToggle.BackColor = AppTheme.Success;
-                _lblOnlineStatus.Text = "🟢  Online";
-                _lblOnlineStatus.ForeColor = Color.White;
+                _pnlActiveToggle.BackColor = AppTheme.Success;
+                _lblActiveStatus.Text = "● Active";
+                _lblActiveStatus.ForeColor = Color.White;
             }
             else
             {
-                _pnlOnlineToggle.BackColor = AppTheme.SidebarHover;
-                _lblOnlineStatus.Text = "⚫  Inactive";
-                _lblOnlineStatus.ForeColor = Color.FromArgb(160, 180, 210);
+                _pnlActiveToggle.BackColor = AppTheme.SidebarHover;
+                _lblActiveStatus.Text = "○ Offline";
+                _lblActiveStatus.ForeColor = AppTheme.TextMuted;
             }
         }
 
@@ -365,13 +330,10 @@ namespace OOP.Presentation
         {
             try
             {
-                // Nếu driver đang có chuyến chưa xong → mở lại MapTripScreen
                 var trips = await _tripService.GetActiveTripsForDriver(Driver.Id);
                 var active = trips.FirstOrDefault(t =>
                     t.Status is TripStatus.Matched or TripStatus.Arrived or TripStatus.Started);
-
-                if (active != null)
-                    await OnTripAccepted(active);
+                if (active != null) await OnTripAccepted(active);
             }
             catch (Exception ex)
             {
@@ -385,18 +347,17 @@ namespace OOP.Presentation
                 await _dashboardScreen.RefreshAsync();
         }
 
-        private async Task SetInactiveOnExit()
+        private async Task SetOfflineOnExit()
         {
             try
             {
-                if (Driver.Status == DriverStatus.OnTrip)
-                    Driver.ForceSetActive();
-                Driver.SetInactive();
-                await _userService.UpdateDriverStatus(Driver.Id, DriverStatus.Inactive);
+                if (Driver.Status == DriverStatus.OnTrip) Driver.SetAvailable();
+                Driver.SetOffline();
+                await _userService.UpdateDriverStatus(Driver.Id, DriverStatus.Offline);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[SetInactiveOnExit] {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[SetOfflineOnExit] {ex.Message}");
             }
         }
     }

@@ -122,7 +122,7 @@ namespace OOP.Presentation.Common.Components
             _lblRoute.Text = $"{trip.Pickup.Name} → {trip.Destination.Name}";
 
             // Info
-            string vehicleType = trip.VehicleType == "Motorbike" ? "Xe máy" : "Ô tô";
+            string vehicleType = trip.VehicleType == VehicleType.Motorbike ? "Xe máy" : "Ô tô";
             string fare = $"{trip.Fare:N0} VNĐ";
             _lblInfo.Text = $"{fare} • {vehicleType}";
 

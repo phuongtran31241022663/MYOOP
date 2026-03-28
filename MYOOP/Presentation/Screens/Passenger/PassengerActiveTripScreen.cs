@@ -119,10 +119,10 @@ namespace OOP.Presentation.Screens.Passenger
             _pnlStatusBadge.Controls.Add(_lblStatus);
 
             // Info card
-            var card = FormHelper.MakeCard(0, 180);
+            var card = FormHelper.MakeCard(380, 180);
             card.Dock = DockStyle.None;
-            card.Width = 380;
             card.Location = new Point(16, 64);
+            card.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
 
             int y = 12;
             var lblPickupTitle = FormHelper.MakeLabel("📍 Điểm đón", 9f, foreColor: AppTheme.TextMuted);
@@ -189,6 +189,7 @@ namespace OOP.Presentation.Screens.Passenger
             // Chuyển sang active view
             _pnlEmpty.Visible = false;
             _pnlActive.Visible = true;
+            _btnCancel.Visible = true;
 
             // Status text + màu
             (_lblStatus.Text, _pnlStatusBadge.BackColor) = trip.Status switch
@@ -247,6 +248,7 @@ namespace OOP.Presentation.Screens.Passenger
                 await _tripService.CancelTrip(_shell.CurrentTrip.Id, "Passenger cancelled");
                 _shell.SetCurrentTrip(null);
                 ShowEmptyState();
+                _btnCancel.Visible = false;
             }
             catch (Exception ex)
             {
@@ -255,8 +257,11 @@ namespace OOP.Presentation.Screens.Passenger
             }
             finally
             {
-                _btnCancel.Enabled = true;
-                _btnCancel.Text = "Hủy chuyến";
+                if (_pnlActive.Visible)
+                {
+                    _btnCancel.Enabled = true;
+                    _btnCancel.Text = "Hủy chuyến";
+                }
             }
         }
     }

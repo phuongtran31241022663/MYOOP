@@ -2,8 +2,9 @@
 {
     public static class AppTheme
     {
-        public static readonly Size DefaultFormSize = new(1280, 800);
-        public static readonly Size MinFormSize = new(1024, 768);
+        // Window sizing (standard dashboard)
+        public static readonly Size StandardSize = new(1200, 800);
+        public static readonly Size StandardMinSize = new(1000, 700);
 
         // ── Brand colors ──────────────────────────────────────────────────────
 
@@ -103,9 +104,12 @@
         // ── Sizing — forms ────────────────────────────────────────────────────
 
         public static readonly Size DialogSize = new(960, 700);
-        public static readonly Size DialogMinSize = new(760, 560);
-        public static readonly Size DashboardSize = new(1200, 760);
-        public static readonly Size DashboardMinSize = new(900, 600);
+        public static readonly Size DialogMinSize = new(760, 640);
+
+        // ── Layout ───────────────────────────────────────────────────────────
+
+        public const int HeaderHeight = 56;
+        public const int SidebarWidth = 200;
 
         // ── Spacing ───────────────────────────────────────────────────────────
 
