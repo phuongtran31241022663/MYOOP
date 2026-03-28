@@ -1,44 +1,62 @@
-﻿﻿using OOP.Application.Validators;
+﻿using System.Runtime.Serialization;
 using OOP.Domain.Enums;
-using System.Runtime.Serialization;
 
 namespace OOP.Domain.Entities
 {
     [DataContract]
     public class Fare
     {
+        #region Properties
         [DataMember] public Guid Id { get; init; }
+
         [DataMember] public VehicleType VehicleType { get; private set; }
-        [DataMember] public decimal BaseFare { get; private set; }
-        [DataMember] public decimal PricePerKm { get; private set; }
-        [DataMember] public decimal MinimumFare { get; private set; }
-        [DataMember] public decimal CommissionRate { get; private set; }
-        [DataMember] public DateTime UpdatedAt { get; private set; }
 
-        protected Fare() { }
-
-        public Fare(VehicleType vehicleType, decimal baseFare, decimal pricePerKm,
-                    decimal minimumFare, decimal commissionRate)
+        private decimal baseFare;
+        [DataMember]
+        public decimal BaseFare
         {
-            FareRuleValidator.Validate(baseFare, pricePerKm, minimumFare, commissionRate);
-
-            Id = Guid.NewGuid();
-            VehicleType = vehicleType;
-            BaseFare = baseFare;
-            PricePerKm = pricePerKm;
-            MinimumFare = minimumFare;
-            CommissionRate = commissionRate;
-            UpdatedAt = DateTime.UtcNow;
+            get => baseFare;
+            private set => baseFare = value < 0
+                ? throw new ArgumentException("Giá cơ bản không thể âm.")
+                : value;
         }
 
-        public void Update(decimal baseFare, decimal pricePerKm,
-                           decimal minimumFare, decimal commissionRate)
+        private decimal pricePerKm;
+        [DataMember]
+        public decimal PricePerKm
         {
-            FareRuleValidator.Validate(baseFare, pricePerKm, minimumFare, commissionRate);
+            get => pricePerKm;
+            private set => pricePerKm = value <= 0
+                ? throw new ArgumentException("Giá mỗi km phải lớn hơn 0.")
+                : value;
+        }
 
+        private decimal commissionRate;
+        [DataMember]
+        public decimal CommissionRate
+        {
+            get => commissionRate;
+            private set => commissionRate = value < 0 || value > 1
+                ? throw new ArgumentException("Tỷ lệ hoa hồng phải từ 0 đến 1 (0% – 100%).")
+                : value;
+        }
+
+        [DataMember] public DateTime UpdatedAt { get; private set; }
+        #endregion
+        #region Constructors
+        protected Fare() { }
+
+        public Fare(VehicleType vehicleType, decimal baseFare, decimal pricePerKm, decimal commissionRate)
+        {
+            Id = Guid.NewGuid();
+            VehicleType = vehicleType;
+            UpdateRule(baseFare, pricePerKm, commissionRate);
+        }
+        #endregion
+        public void UpdateRule(decimal baseFare, decimal pricePerKm, decimal commissionRate)
+        {
             BaseFare = baseFare;
             PricePerKm = pricePerKm;
-            MinimumFare = minimumFare;
             CommissionRate = commissionRate;
             UpdatedAt = DateTime.UtcNow;
         }
@@ -46,13 +64,12 @@ namespace OOP.Domain.Entities
         public decimal CalculateFare(double distanceKm)
         {
             if (distanceKm < 0)
-                throw new ArgumentException("Khoảng cách không thể âm.", nameof(distanceKm));
+                throw new ArgumentException("Khoảng cách không hợp lệ.", nameof(distanceKm));
 
-            decimal total = BaseFare + ((decimal)distanceKm * PricePerKm);
-
-            decimal fare = Math.Max(total, MinimumFare);
+            decimal fare = BaseFare + ((decimal)distanceKm * PricePerKm);
 
             return Math.Floor(fare / 1000m) * 1000m;
         }
+        public decimal CalculateCommission(decimal tripFare) => tripFare * CommissionRate;
     }
 }

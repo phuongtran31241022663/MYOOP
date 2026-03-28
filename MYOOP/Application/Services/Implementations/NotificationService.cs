@@ -1,5 +1,6 @@
 ﻿﻿using OOP.Application.Services.Interfaces;
 using OOP.Domain.Interfaces;
+using OOP.Infrastructure;
 
 
 namespace OOP.Application.Services
@@ -28,15 +29,14 @@ namespace OOP.Application.Services
                 throw new ArgumentException("Nội dung thông báo không được để trống.");
 
             var user = await _userRepo.GetById(passengerId);
-            if (user == null) return;
+            if (user == null)
+            {
+                Console.WriteLine($"[WARN] Passenger {passengerId} không tồn tại");
+                return;
+            }
 
-            var log = $"[PASSENGER] {user.Name}: {message}";
-            Console.WriteLine(log);
-
-            // Raise event để Form có thể hiển thị
             OnPassengerNotified?.Invoke(passengerId, message);
         }
-
         public async Task NotifyDriver(Guid driverId, string message)
         {
             if (string.IsNullOrWhiteSpace(message))
@@ -47,6 +47,7 @@ namespace OOP.Application.Services
 
             var log = $"[DRIVER] {user.Name}: {message}";
             Console.WriteLine(log);
+            Logger.Instance.LogDebug($"Driver notification: {user.Name} - {message}");
 
             OnDriverNotified?.Invoke(driverId, message);
         }

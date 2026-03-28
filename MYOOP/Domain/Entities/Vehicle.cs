@@ -1,6 +1,5 @@
-﻿﻿using OOP.Application.Validators;
+﻿using System.Runtime.Serialization;
 using OOP.Domain.Enums;
-using System.Runtime.Serialization;
 
 namespace OOP.Domain.Entities
 {
@@ -9,62 +8,110 @@ namespace OOP.Domain.Entities
     [KnownType(typeof(Car))]
     public abstract class Vehicle
     {
+        #region Properties
         [DataMember] public Guid Id { get; private set; }
-        [DataMember] public Guid DriverId { get; private set; }
-        [DataMember] public string PlateNumber { get; private set; }
-        [DataMember] public VehicleType Type { get; private set; }
-        [DataMember] public string Brand { get; private set; }
-        [DataMember] public string Model { get; private set; }
-        [DataMember] public string Color { get; private set; }
-        [DataMember] public int Capacity { get; protected set; }
 
+        private Guid driverId;
+        [DataMember]
+        public Guid DriverId
+        {
+            get => driverId;
+            private set => driverId = value == Guid.Empty
+                ? throw new ArgumentException("Xe phải thuộc về tài xế hợp lệ.")
+                : value;
+        }
+
+        private string plateNumber = string.Empty;
+        [DataMember]
+        public string PlateNumber
+        {
+            get => plateNumber;
+            private set => plateNumber = string.IsNullOrWhiteSpace(value)
+                ? throw new ArgumentException("Biển số xe không được để trống.")
+                : value.Trim();
+        }
+
+        private string brand = string.Empty;
+        [DataMember]
+        public string Brand
+        {
+            get => brand;
+            private set => brand = string.IsNullOrWhiteSpace(value)
+                ? throw new ArgumentException("Hãng xe không được để trống.")
+                : value.Trim();
+        }
+
+        private string model = string.Empty;
+        [DataMember]
+        public string Model
+        {
+            get => model;
+            private set => model = string.IsNullOrWhiteSpace(value)
+                ? throw new ArgumentException("Mẫu xe không được để trống.")
+                : value.Trim();
+        }
+
+        private string color = string.Empty;
+        [DataMember]
+        public string Color
+        {
+            get => color;
+            private set => color = string.IsNullOrWhiteSpace(value)
+                ? throw new ArgumentException("Màu xe không được để trống.")
+                : value.Trim();
+        }
+
+        private int capacity;
+        [DataMember]
+        public int Capacity
+        {
+            get => capacity;
+            protected set => capacity = value <= 0
+                ? throw new ArgumentException("Sức chứa không hợp lệ.")
+                : value;
+        }
+        public abstract VehicleType GetVehicleType();
+        public abstract bool IsCar();
+        public abstract double GetMinSpeed(); // km/h
+        public abstract double GetMaxSpeed(); // km/h
+        public abstract double GetMaxPickupDistance(); // km
+        #endregion
+        #region Constructors
         protected Vehicle() { }
 
-        public Vehicle(
-            Guid driverId,
-            VehicleType type,
-            string plateNumber,
-            string brand,
-            string model,
-            string color,
-            byte capacity)
+        protected Vehicle(
+             Guid driverId,
+             string plateNumber,
+             string brand,
+             string model,
+             string color,
+             int capacity)
         {
             Id = Guid.NewGuid();
             DriverId = driverId;
-            Type = type;
             PlateNumber = plateNumber;
             Brand = brand;
             Model = model;
             Color = color;
             Capacity = capacity;
-            UserValidator.ValidateVehicle(this);
         }
-
-        public void UpdateVehicleInfo(string plateNumber, string brand,
-                                      string model, string color, int capacity)
+        #endregion
+        public virtual void UpdateVehicleInfo(
+             string plateNumber,
+             string brand,
+             string model,
+             string color,
+             int capacity)
         {
-            // Snapshot current state for rollback
-            var snapshot = (PlateNumber, Brand, Model, Color, Capacity);
-
             PlateNumber = plateNumber;
             Brand = brand;
             Model = model;
             Color = color;
             Capacity = capacity;
-
-            try
-            {
-                UserValidator.ValidateVehicle(this);
-            }
-            catch
-            {
-                (PlateNumber, Brand, Model, Color, Capacity) = snapshot;
-                throw;
-            }
         }
 
         public override string ToString() =>
-            $"{Brand} {Model} | {PlateNumber} | {Capacity} chỗ | {Type}";
+            $"{Brand} {Model} | {PlateNumber} | {Capacity} chỗ | {GetVehicleType()}";
     }
 
     [DataContract]
@@ -73,9 +120,16 @@ namespace OOP.Domain.Entities
         protected Motorbike() { }
 
         public Motorbike(Guid driverId, string plateNumber,
-                         string brand, string model, string color)
-            : base(driverId, VehicleType.Motorbike, plateNumber, brand, model, color, 2)
+                       string brand, string model, string color)
+          : base(driverId, plateNumber, brand, model, color, 2)
         { }
+
+        public override VehicleType GetVehicleType() => VehicleType.Motorbike;
+        public override bool IsCar() => false;
+
+        public override double GetMinSpeed() => 25; // km/h
+        public override double GetMaxSpeed() => 45; // km/h
+        public override double GetMaxPickupDistance() => 5;
     }
 
     [DataContract]
@@ -84,24 +138,24 @@ namespace OOP.Domain.Entities
         protected Car() { }
 
         public Car(Guid driverId, string plateNumber,
-                   string brand, string model, string color, int capacity)
-            : base(driverId, VehicleType.Car, plateNumber, brand, model, color,
-                   ValidateCapacity(capacity))
-        { }
-
-        /// <summary>
-        /// Validates and converts capacity before passing to the base constructor.
-        /// Throws <see cref="ArgumentOutOfRangeException"/> for values outside [2, 7],
-        /// and <see cref="OverflowException"/> for values that cannot fit in a byte
-        /// (capacity > 255), even though the business rule prevents reaching that.
-        /// </summary>
-        private static byte ValidateCapacity(int capacity)
+           string brand, string model, string color, int capacity)
+           : base(driverId, plateNumber, brand, model, color, capacity)
         {
-            if (capacity < 2 || capacity > 7)
-                throw new ArgumentOutOfRangeException(
-                    nameof(capacity), capacity, "Số chỗ ngồi phải từ 2 đến 7.");
+            if (capacity < 4)
+                throw new ArgumentException("Xe ô tô phải có ít nhất 4 chỗ ngồi.");
+        }
+        public override VehicleType GetVehicleType() => VehicleType.Car;
+        public override bool IsCar() => true;
 
-            return checked((byte)capacity);
+        public override double GetMinSpeed() => 40; // km/h
+        public override double GetMaxSpeed() => 70; // km/h
+        public override double GetMaxPickupDistance() => 7;
+        public override void UpdateVehicleInfo(string plateNumber, string brand, string model, string color, int capacity)
+        {
+            if (capacity < 4)
+                throw new ArgumentException("Xe ô tô phải có ít nhất 4 chỗ ngồi.");
+
+            base.UpdateVehicleInfo(plateNumber, brand, model, color, capacity);
         }
     }
 }

@@ -5,7 +5,7 @@ using OOP.Infrastructure.Storage;
 
 namespace OOP.Infrastructure.Repositories
 {
-    public class FareRuleRepository : BaseRepository<Fare>, IFareRuleRepository
+    public class FareRuleRepository : BaseRepository<Fare>, IFareRepository
     {
         private volatile bool _seeded = false;
         private readonly SemaphoreSlim _seedLock = new(1, 1);
@@ -20,16 +20,23 @@ namespace OOP.Infrastructure.Repositories
         {
             if (_seeded) return;
 
-            await _seedLock.WaitAsync();
+            bool lockAcquired = false;
             try
             {
+                await _seedLock.WaitAsync();
+                lockAcquired = true;
                 if (_seeded) return;
                 await SeedDefaultRules();
                 _seeded = true;
             }
+            catch
+            {
+                throw;
+            }
             finally
             {
-                _seedLock.Release();
+                try { if (lockAcquired) _seedLock.Release(); }
+                catch { /* ignore */ }
             }
         }
 
@@ -43,15 +50,13 @@ namespace OOP.Infrastructure.Repositories
                 vehicleType: VehicleType.Motorbike,
                 baseFare: 10000m,      // Giá mở cửa 10k
                 pricePerKm: 5000m,     // 5k mỗi km
-                minimumFare: 10000m,   // Giá sàn 10k
                 commissionRate: DefaultCommission));
 
             // Car: Rẻ nhưng cao hơn xe máy
             Items.Add(new Fare(
                 vehicleType: VehicleType.Car,
-                baseFare: 15000m,     
+                baseFare: 15000m,
                 pricePerKm: 10000m,    // 10k mỗi km
-                minimumFare: 20000m,   // Giá sàn cho xe hơi
                 commissionRate: DefaultCommission));
 
             await Save();
@@ -67,10 +72,10 @@ namespace OOP.Infrastructure.Repositories
             await EnsureSeeded();
             return Items.FirstOrDefault(r => r.Id == id);
         }
-        public async Task<Fare?> GetByVehicleType(VehicleType type)
+        public async Task<Fare?> GetByVehicleType(VehicleType VehicleType)
         {
             await EnsureSeeded();
-            return Items.FirstOrDefault(r => r.VehicleType == type);
+            return Items.FirstOrDefault(r => r.VehicleType == VehicleType);
         }
 
         public async Task Add(Fare rule)

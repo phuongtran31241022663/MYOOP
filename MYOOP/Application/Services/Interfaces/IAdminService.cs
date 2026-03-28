@@ -10,8 +10,8 @@ namespace OOP.Application.Services.Interfaces
         Task<List<Fare>> GetFareRules();
         Task<Fare> CreateFareRule(Fare rule);
         Task UpdateFareRule(Fare rule);
-        Task ActivateUser(Guid userId);
-        Task DeactivateUser(Guid targetUserId, Guid currentAdminId);
+        Task ActivateAccountUser(Guid userId);
+        Task DeActivateAccountUser(Guid targetUserId, Guid currentAdminId);
         Task<TripReport> GetTripReport();
     }
 }

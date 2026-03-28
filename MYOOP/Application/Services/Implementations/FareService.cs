@@ -7,24 +7,17 @@ namespace OOP.Application.Services
 {
     public class FareService : IFareService
     {
-        private readonly IFareRuleRepository _fareRuleRepo;
+        private readonly IFareRepository _fareRuleRepo;
 
-        public FareService(IFareRuleRepository fareRuleRepo)
+        public FareService(IFareRepository fareRuleRepo)
         {
             _fareRuleRepo = fareRuleRepo ?? throw new ArgumentNullException(nameof(fareRuleRepo));
         }
 
-        public async Task<Fare?> GetFareRule(VehicleType vehicleType)
+        public async Task<Fare?> GetFareRule(VehicleType VehicleType)
         {
-            return await _fareRuleRepo.GetByVehicleType(vehicleType);
+            return await _fareRuleRepo.GetByVehicleType(VehicleType);
         }
-
-        /// <summary>
-        /// Calculates the fare for the given trip, applies it to the trip via
-        /// <see cref="Trip.ApplyFare"/>, and returns the computed amount.
-        /// The side-effect (ApplyFare) is intentional: the caller is responsible
-        /// for persisting the updated trip afterwards.
-        /// </summary>
         public async Task<decimal> CalculateFare(Trip trip)
         {
             if (trip == null) throw new ArgumentNullException(nameof(trip));
@@ -32,15 +25,7 @@ namespace OOP.Application.Services
             var rule = await _fareRuleRepo.GetByVehicleType(trip.VehicleType)
                 ?? throw new InvalidOperationException(
                     $"Không tìm thấy cấu hình giá cho loại xe '{trip.VehicleType}'.");
-
-            if (trip.Distance < 0)
-                throw new InvalidOperationException("Chuyến đi chưa có khoảng cách hợp lệ.");
-
-            decimal fare = rule.CalculateFare(trip.Distance);
-
-            trip.ApplyFare(fare);   // intentional side-effect — see XML doc above
-
-            return fare;
+            return rule.CalculateFare(trip.Distance);
         }
     }
 }

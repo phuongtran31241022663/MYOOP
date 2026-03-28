@@ -1,6 +1,5 @@
 using OOP.Application.Services.Interfaces;
 using OOP.Application.Services.Models;
-using OOP.Application.Validators;
 using OOP.Domain.Entities;
 using OOP.Domain.Interfaces;
 using OOP.Domain.Enums;
@@ -11,13 +10,13 @@ namespace OOP.Application.Services
     {
         private readonly IUserRepository _userRepo;
         private readonly ITripRepository _tripRepo;
-        private readonly IFareRuleRepository _fareRuleRepo;
+        private readonly IFareRepository _fareRuleRepo;
         private readonly IPaymentRepository _paymentRepo;
 
         public AdminService(
             IUserRepository userRepo,
             ITripRepository tripRepo,
-            IFareRuleRepository fareRuleRepo,
+            IFareRepository fareRuleRepo,
             IPaymentRepository paymentRepo)
         {
             _userRepo = userRepo ?? throw new ArgumentNullException(nameof(userRepo));
@@ -45,45 +44,57 @@ namespace OOP.Application.Services
         {
             if (rule == null) throw new ArgumentNullException(nameof(rule));
 
-            FareRuleValidator.ValidateRule(rule);
+            // Validation is handled by property setters
             await _fareRuleRepo.Add(rule);
             return rule;
         }
 
-        public async Task UpdateFareRule(Fare rule)
+     public async Task UpdateFareRule(Fare rule)
         {
             if (rule == null) throw new ArgumentNullException(nameof(rule));
 
-            FareRuleValidator.ValidateRule(rule);
-
+            // Validation is handled by property setters
             await _fareRuleRepo.Update(rule);
         }
 
-        public async Task DeactivateUser(Guid targetUserId, Guid currentAdminId)
+        public async Task DeActivateAccountUser(Guid targetId, Guid adminId)
         {
-            var targetUser = await _userRepo.GetById(targetUserId);
+            var user = await GetOrThrow(targetId);
 
-            // 1. Chặn tự khóa tài khoản của chính mình
-            if (targetUserId == currentAdminId)
+            switch (user)
             {
-                throw new InvalidOperationException("Bạn không thể tự khóa tài khoản của chính mình.");
+                case Passenger passenger:
+                    passenger.DeActivateAccount(adminId);
+                    break;
+                case Driver driver:
+                    driver.DeActivateAccount(adminId);
+                    break;
+                case Admin:
+                    throw new InvalidOperationException("Không thể khóa tài khoản admin.");
+                default:
+                    throw new InvalidOperationException("Loại người dùng không hợp lệ.");
             }
 
-            // 2. Chặn Admin này khóa Admin khác (Tùy theo quy định đồ án)
-            if (targetUser is Admin)
-            {
-                throw new InvalidOperationException("Không có quyền tác động lên tài khoản Quản trị viên khác.");
-            }
-
-            // Nếu vượt qua các kiểm tra trên thì mới thực hiện khóa
-            targetUser.Deactivate();
-            await _userRepo.Update(targetUser);
+            await _userRepo.Update(user);
         }
-
-        public async Task ActivateUser(Guid userId)
+        public async Task ActivateAccountUser(Guid userId)
         {
             var user = await GetOrThrow(userId);
-            user.Activate();
+
+            switch (user)
+            {
+                case Passenger passenger:
+                    passenger.ActivateAccount();
+                    break;
+                case Driver driver:
+                    driver.ActivateAccount();
+                    break;
+                case Admin:
+                    throw new InvalidOperationException("Tài khoản admin đã luôn hoạt động.");
+                default:
+                    throw new InvalidOperationException("Loại người dùng không hợp lệ.");
+            }
+
             await _userRepo.Update(user);
         }
 

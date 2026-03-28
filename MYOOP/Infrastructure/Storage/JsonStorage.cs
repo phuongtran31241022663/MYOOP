@@ -12,7 +12,8 @@ namespace OOP.Infrastructure.Storage
         {
             typeof(User), typeof(Passenger), typeof(Driver), typeof(Admin),
             typeof(Vehicle), typeof(Motorbike), typeof(Car),
-            typeof(Trip), typeof(Payment), typeof(Rating), typeof(Fare), typeof(Location)
+            typeof(Trip), typeof(Payment), typeof(Rating), typeof(Fare), typeof(GeoLocation),
+            typeof(Route)
         };
 
         public JsonStorage(string basePath)
@@ -32,11 +33,13 @@ namespace OOP.Infrastructure.Storage
 
             try
             {
-                using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                {
-                    CreateSerializer<T>().WriteObject(fs, data);
-                    await fs.FlushAsync();
-                }
+                // Serialize to memory first (offloaded to thread pool)
+                using var ms = new MemoryStream();
+                CreateSerializer<T>().WriteObject(ms, data);
+                var bytes = ms.ToArray();
+
+                // Write to file asynchronously
+                await File.WriteAllBytesAsync(tempPath, bytes);
                 File.Copy(tempPath, filePath, overwrite: true);
                 File.Delete(tempPath);
             }

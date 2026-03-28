@@ -1,19 +1,37 @@
-﻿﻿using OOP.Domain.Entities;
+﻿using OOP.Domain.Entities;
+using OOP.Domain.Enums;
 
-namespace OOP.Application.Services.Interfaces
+public interface IUserService
 {
-    public interface IUserService
-    {
-        // --- Quản lý Profile ---
+    Task<Passenger> RegisterPassenger(string name, string phone, string password);
 
-        Task<User?> GetUserProfile(Guid userId);
+    Task<Driver> RegisterDriver(string name, string phone, string password,
+                         Vehicle vehicle, GeoLocation defaultLocation, string license);
+    Task<User> Login(string phone, string password);
+    Task<User?> GetUserProfile(Guid userId);
 
-        Task UpdateUserProfile(Guid userId, string name, string phone);
-        Task UpdateDriverLocation(Guid driverId, Location location);
-        Task UpdateDriverStatus(Guid driverId, OOP.Domain.Enums.DriverStatus status);
+    Task UpdateProfileName(Guid userId, string name);
+    Task ChangePhone(Guid userId, string newPhone);
+    Task ChangePassword(Guid userId, string oldPassword, string newPassword);
+    Task UpdateUserProfile(Guid userId, string name, string phone);
 
-        Task ResetPassword(Guid userId, string newPassword);
+    Task UpdateDriverVehicle(Guid driverId, Vehicle vehicle);
+    Task UpdateDriverVehicleInfo(
+        Guid driverId,
+        string vehicleType,
+        string plateNumber,
+        string brand,
+        string model,
+        string color,
+        int capacity);
+    Task UpdateDriverLicense(Guid driverId, string license);
+    Task UpdateDriverLocation(Guid driverId, GeoLocation location);
+    Task TopUpDriverWallet(Guid driverId, decimal amount);
+    Task UpdateDriverStatus(Guid driverId, DriverStatus status);
 
-        Task DeactivateUser(Guid userId);
-    }
+    /// <summary>
+    /// Force recover driver status to Active (bypass status transition guard).
+    /// Used for recovery from stale OnTrip state when trips are unexpectedly ended.
+    /// </summary>
+    Task ForceRecoverDriverStatus(Guid driverId);
 }

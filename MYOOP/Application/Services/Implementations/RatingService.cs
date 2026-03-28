@@ -1,6 +1,6 @@
-﻿﻿using OOP.Application.Services.Interfaces;
-using OOP.Application.Validators;
+﻿using OOP.Application.Services.Interfaces;
 using OOP.Domain.Entities;
+using OOP.Domain.Enums;
 using OOP.Domain.Interfaces;
 
 namespace OOP.Application.Services
@@ -27,12 +27,12 @@ namespace OOP.Application.Services
             int score,
             string comment)
         {
-            RatingValidator.ValidateRating(score, comment);
-
             var trip = await _tripRepo.GetById(tripId)
                        ?? throw new KeyNotFoundException($"Không tìm thấy trip '{tripId}'.");
 
-            RatingValidator.ValidateTripForRating(trip);
+            // Validate trip is completed before allowing rating
+            if (trip.Status != TripStatus.Completed)
+                throw new InvalidOperationException("Chỉ có thể đánh giá chuyến đi đã hoàn thành.");
 
             if (await _ratingRepo.ExistsForTrip(tripId))
                 throw new InvalidOperationException("Chuyến đi này đã được đánh giá.");

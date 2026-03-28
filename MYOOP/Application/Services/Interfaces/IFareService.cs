@@ -7,6 +7,6 @@ namespace OOP.Application.Services.Interfaces
     {
         Task<decimal> CalculateFare(Trip trip);
 
-        Task<Fare?> GetFareRule(VehicleType vehicleType);
+        Task<Fare?> GetFareRule(VehicleType VehicleType);
     }
 }
